@@ -1,0 +1,258 @@
+#!/bin/sh
+# Initramfs expects /usr/sbin/losetup but util-linux-aarch64 ships it in /sbin.
+# Adjust the base mkinitfs file list so generation can include the package file.
+if [ -x /sbin/losetup ] && [ -f /usr/share/mkinitfs/files/00-initramfs-base.files ]; then
+	sed -i 's|/usr/sbin/losetup|/sbin/losetup|' /usr/share/mkinitfs/files/00-initramfs-base.files
+fi
+# boot-deploy looks for DTB in /boot/dtbs* and /usr/share/dtb/; kernel may install to a versioned subdir
+_dtb="$(find /boot/dtbs -name 'msm8939-zte-blade-s6.dtb' 2>/dev/null | head -1)"
+if [ -n "$_dtb" ]; then
+	mkdir -p /usr/share/dtb/qcom
+	ln -sf "$_dtb" /usr/share/dtb/qcom/msm8939-zte-blade-s6.dtb
+fi
+
+# WCNSS WiFi (wcn36xx): the udev coldplug auto-load races the early-boot storm
+# (pronto remoteproc PIL + qcom_scm TZ calls, plus the disabled-display msm_mdp
+# probe) and hard-resets the SoC -> boot hangs dark. The driver/firmware/iris RF
+# all work fine when loaded after boot settles (scan + connect verified). So we
+# block the early coldplug load and defer it to an /etc/local.d hook.
+# NOTE (Phase C): once the display stack is properly brought up (msm_drm loaded,
+# not blacklisted), the racing msm_mdp probe disappears and this deferral may no
+# longer be needed -- re-test removing it then.
+mkdir -p /etc/modprobe.d /etc/local.d
+cat > /etc/modprobe.d/wcn36xx-defer.conf <<'EOF'
+# Block udev coldplug auto-load; loaded late by /etc/local.d/wcn36xx-load.start
+blacklist wcn36xx
+EOF
+cat > /etc/local.d/wcn36xx-load.start <<'EOF'
+#!/bin/sh
+# Deferred WCNSS WiFi load (see device post-install): avoids the early-boot
+# coldplug race that hard-resets the SoC. Loaded once the system has settled.
+sleep 5
+modprobe wcn36xx
+EOF
+chmod +x /etc/local.d/wcn36xx-load.start
+
+# Phase C display: the framebuffer console (fbcon) on the panel is the "clean held
+# image". fbcon does a one-shot modeset when msm_drm binds; that modeset
+# occasionally loses an EBUSY race against the concurrent GPU/MDP aggregate bind
+# (dmesg: "fbcon_init: detected unhandled fb_set_par error, error code -16"),
+# leaving the connector disabled -> black panel. Once the system settles a modeset
+# always succeeds (verified via modetest + fbcon rebind). So after boot, if the
+# panel didn't come up, kick fbcon to re-run the modeset. Also belt-and-suspenders
+# disable VT blanking (cmdline already has consoleblank=0).
+cat > /etc/local.d/fbcon-console.start <<'EOF'
+#!/bin/sh
+# Hold a clean console image on the panel (see device post-install).
+sleep 6
+en=$(cat /sys/class/drm/card0-DSI-1/enabled 2>/dev/null)
+bl=$(cat /sys/class/graphics/fb0/blank 2>/dev/null)
+if [ "$en" != "enabled" ] || [ "$bl" != "0" ]; then
+	echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null
+	if [ "$(cat /sys/class/drm/card0-DSI-1/enabled 2>/dev/null)" != "enabled" ] \
+	   && [ -e /sys/class/vtconsole/vtcon1/bind ]; then
+		echo 0 > /sys/class/vtconsole/vtcon1/bind
+		sleep 1
+		echo 1 > /sys/class/vtconsole/vtcon1/bind
+	fi
+fi
+setterm --blank 0 --term linux >/dev/tty1 2>/dev/null || true
+EOF
+chmod +x /etc/local.d/fbcon-console.start
+rc-update add local default 2>/dev/null || true
+
+# GPU firmware in the initramfs. msm_drm is built-in (=y, for the early display /
+# boot-glitch fix), so it probes at ~2 s — before the rootfs is mounted. The Adreno
+# 405 a420 microcode (firmware-qcom-adreno-a420) installs to /usr/lib/firmware/qcom,
+# which the initramfs exposes via its /lib -> usr/lib symlink, so the kernel's
+# /lib/firmware search finds it at early probe. Without this the GPU fails
+# "Direct firmware load for qcom/a420_pm4.fw failed -2" and never initialises.
+# Add the two fw files to the mkinitfs file list so they land in the initramfs.
+if [ -d /usr/share/mkinitfs/files ]; then
+	cat > /usr/share/mkinitfs/files/05-zte-gpu-fw.files <<'EOF'
+/usr/lib/firmware/qcom/a420_pm4.fw!optional
+/usr/lib/firmware/qcom/a420_pfp.fw!optional
+EOF
+fi
+
+# Bluetooth (btqcomsmd on the WCNSS SMD edge): hci0 + BD address come up from the
+# pronto firmware at boot, no DTS/kernel change. Enable the userspace stack.
+rc-update add dbus default 2>/dev/null || true
+rc-update add bluetooth default 2>/dev/null || true
+
+# Audio (QDSP6/mpss): rmtfs serves the modem EFS so the modem DSP completes init
+# and advertises APR; its initd runs with -s, which boots the mpss remoteproc in
+# sync with rmtfs (no separate start hook needed). Starts after udev-settle.
+# rmtfs boots the modem DSP, which costs about 13 C of idle die temperature on a
+# phone whose EMI shield (its heat spreader) is removed. That is the whole
+# thermal headroom the Phosh compositor needs, so leaving it in the default
+# runlevel makes the GUI shut down at the 95 C GPU critical trip. Audio is fully
+# shipped - start it on demand with: rc-service rmtfs start
+rc-update del rmtfs default 2>/dev/null || true
+
+# wcn36xx cannot enter BMPS (beacon power save): the firmware answers
+# hal_enter_bmps with err=5 and the link drops seconds after associating.
+# NetworkManager's 802-11-wireless.powersave does not reach the driver here
+# because WiFi runs through the iwd backend, so set it on the interface.
+mkdir -p /etc/udev/rules.d
+cat > /etc/udev/rules.d/80-wcn36xx-no-powersave.rules <<'EOF'
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="wlan*", RUN+="/usr/sbin/iw dev %k set power_save off"
+EOF
+
+# WiFi regulatory domain. Without a country the kernel uses 00 (world), under
+# which every 5 GHz range is PASSIVE-SCAN, so the radio can receive but never
+# associate. cfg80211 is a module here, so this has to be a modprobe option
+# rather than a kernel cmdline parameter.
+mkdir -p /etc/modprobe.d
+cat > /etc/modprobe.d/cfg80211-regdom.conf <<'EOF'
+options cfg80211 ieee80211_regdom=RU
+EOF
+
+# Console auto-rotation: map the cwstm32 accelerometer's gravity vector to the
+# fbcon rotation so the panel console follows how the phone is held (headless ->
+# no compositor does this). The daemon reads the IIO accel (served from the
+# driver's data-ready IRQ cache, so reads never stall) and writes
+# /sys/class/graphics/fbcon/rotate. Run as an OpenRC service (start-stop-daemon
+# backgrounds it reliably, unlike a local.d setsid).
+mkdir -p /usr/local/bin
+cat > /usr/local/bin/cwstm32-autorotate <<'EOF'
+#!/bin/sh
+# cwstm32 accel -> fbcon console auto-rotation (0=normal 1=90 2=180 3=270).
+ROT=/sys/class/graphics/fbcon/rotate
+LOG=${CWSTM32_AUTOROTATE_LOG:-}
+DEV=
+for try in $(seq 30); do			# fbcon + IIO device may lag at boot
+	for d in /sys/bus/iio/devices/iio:device*; do
+		[ "$(cat "$d/name" 2>/dev/null)" = "cwstm32" ] && DEV="$d" && break
+	done
+	[ -n "$DEV" ] && [ -w "$ROT" ] && break
+	sleep 1
+done
+[ -n "$DEV" ] && [ -w "$ROT" ] || exit 0
+abs() { [ "$1" -lt 0 ] && echo $(( -$1 )) || echo "$1"; }
+FLAT=600	# |z| above this (and dominant) => lying flat, hold orientation
+MARGIN=300	# dominant in-plane axis must beat the other by this (raw ~1000/g)
+cur=$(cat "$ROT" 2>/dev/null); : "${cur:=0}"
+I2C_ID=0-003a
+cwstm32_recover() {				# rebind on stall; non-zero if hub hard-hung
+	DEV=
+	echo "$I2C_ID" > /sys/bus/i2c/drivers/cwstm32/unbind 2>/dev/null
+	sleep 1
+	echo "$I2C_ID" > /sys/bus/i2c/drivers/cwstm32/bind 2>/dev/null
+	sleep 2
+	for d in /sys/bus/iio/devices/iio:device*; do
+		[ "$(cat "$d/name" 2>/dev/null)" = "cwstm32" ] && DEV="$d" && break
+	done
+	[ -n "$DEV" ]
+}
+STALL=16	# x0.5 s with no fresh data (read -ENXIO or zero jitter) => wedged hub
+still=0; prev=
+while :; do
+	x=$(cat "$DEV/in_accel_x_raw" 2>/dev/null)
+	y=$(cat "$DEV/in_accel_y_raw" 2>/dev/null)
+	z=$(cat "$DEV/in_accel_z_raw" 2>/dev/null)
+	if [ -z "$x" ] || [ -z "$y" ] || [ -z "$z" ] || [ "$x $y $z" = "$prev" ]; then
+		still=$((still + 1))
+		if [ "$still" -ge "$STALL" ]; then
+			cwstm32_recover || sleep 30	# hard hang: back off (needs reboot)
+			still=0; prev=
+		fi
+		sleep 0.5; continue
+	fi
+	still=0; prev="$x $y $z"
+	ax=$(abs "$x"); ay=$(abs "$y"); az=$(abs "$z")
+	new="$cur"
+	if [ "$az" -gt "$FLAT" ] && [ "$az" -ge "$ax" ] && [ "$az" -ge "$ay" ]; then
+		:
+	elif [ "$ay" -gt "$ax" ] && [ $((ay - ax)) -gt "$MARGIN" ]; then
+		[ "$y" -gt 0 ] && new=0 || new=2
+	elif [ "$ax" -gt "$ay" ] && [ $((ax - ay)) -gt "$MARGIN" ]; then
+		[ "$x" -gt 0 ] && new=1 || new=3
+	fi
+	[ -n "$LOG" ] && echo "$(date +%T) x=$x y=$y z=$z -> rotate=$new (cur=$cur)" >> "$LOG"
+	if [ "$new" != "$cur" ]; then
+		echo "$new" > "$ROT" 2>/dev/null && cur="$new"
+	fi
+	sleep 0.5
+done
+EOF
+chmod +x /usr/local/bin/cwstm32-autorotate
+# Launch from the local.d hook (start-stop-daemon backgrounds it reliably and
+# tracks a pidfile). local.d is the same boot path the wcn36xx/fbcon hooks use.
+mkdir -p /etc/local.d
+cat > /etc/local.d/cwstm32-autorotate.start <<'EOF'
+#!/bin/sh
+start-stop-daemon --start --background --make-pidfile \
+	--pidfile /run/cwstm32-autorotate.pid \
+	--exec /usr/local/bin/cwstm32-autorotate
+EOF
+chmod +x /etc/local.d/cwstm32-autorotate.start
+rc-update add local default 2>/dev/null || true
+
+# On-screen keyboard (buffyboard) toggled by the Home capacitive button. Workflow
+# convenience for the headless console: the TD4291 reports Back/Home/Menu as
+# KEY_BACK/KEY_HOMEPAGE/KEY_MENU; a Home press shows/hides buffyboard (native
+# portrait; buffyboard manages its own console layout).
+cat > /usr/local/bin/buffyboard-toggle <<'EOF'
+#!/bin/sh
+if pkill -x buffyboard; then
+	printf '\033[2J\033[H' > /dev/tty1 2>/dev/null		# repaint the console
+else
+	setsid buffyboard </dev/null >/dev/null 2>&1 &
+fi
+EOF
+chmod +x /usr/local/bin/buffyboard-toggle
+
+cat > /usr/local/bin/buffyboard-home-daemon <<'EOF'
+#!/usr/bin/env python3
+"""Toggle buffyboard on the touch controller's Home (KEY_HOMEPAGE) press."""
+import glob, os, struct, subprocess, time
+KEY_HOMEPAGE = 172
+EV_KEY = 1
+EVENT_SIZE = 24
+TOGGLE = "/usr/local/bin/buffyboard-toggle"
+
+
+def find_device():
+    for ev in sorted(glob.glob("/sys/class/input/event*")):
+        try:
+            name = open(os.path.join(ev, "device/name")).read().strip()
+        except OSError:
+            continue
+        if "Synaptics" in name:
+            return "/dev/input/" + os.path.basename(ev)
+    return None
+
+
+def main():
+    dev = find_device()
+    while not dev:
+        time.sleep(2)
+        dev = find_device()
+    with open(dev, "rb", buffering=0) as f:
+        while True:
+            data = f.read(EVENT_SIZE)
+            if not data or len(data) < EVENT_SIZE:
+                continue
+            _, _, etype, code, value = struct.unpack("qqHHi", data)
+            if etype == EV_KEY and code == KEY_HOMEPAGE and value == 1:
+                subprocess.Popen(["/bin/sh", TOGGLE])
+
+
+if __name__ == "__main__":
+    main()
+EOF
+chmod +x /usr/local/bin/buffyboard-home-daemon
+
+cat > /etc/local.d/buffyboard-home.start <<'EOF'
+#!/bin/sh
+# buffyboard has no usable tty under a Wayland compositor and busy-loops on
+# TIOCGWINSZ at ~94% CPU, which overheats the device.
+ls /usr/share/wayland-sessions/*.desktop >/dev/null 2>&1 && exit 0
+start-stop-daemon --start --background --make-pidfile \
+	--pidfile /run/buffyboard-home.pid \
+	--exec /usr/local/bin/buffyboard-home-daemon
+EOF
+chmod +x /etc/local.d/buffyboard-home.start
+rc-update add local default 2>/dev/null || true
+

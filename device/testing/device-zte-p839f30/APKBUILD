@@ -1,0 +1,59 @@
+# Reference: <https://postmarketos.org/devicepkg>
+# ZTE Blade S6 (P839F30) - mainline MSM8939
+pkgname=device-zte-p839f30
+pkgdesc="ZTE Blade S6 (P839F30)"
+pkgver=1
+pkgrel=35
+url="https://postmarketos.org"
+license="MIT"
+arch="aarch64"
+options="!check !archcheck"
+install="device-zte-p839f30.post-install"
+depends="
+	postmarketos-base
+	postmarketos-mkinitfs-hook-debug-shell
+	mkbootimg
+	linux-postmarketos-qcom-msm8916
+	soc-qcom-msm8939
+	bluez
+	bluez-openrc
+	alsa-utils
+	rmtfs
+	iw
+"
+makedepends="devicepkg-dev"
+source="
+	deviceinfo
+	modules-initfs
+	device-zte-p839f30.post-install
+	50-zte-p839f30.gschema.override
+"
+subpackages="$pkgname-nonfree-firmware:nonfree_firmware"
+
+build() {
+	devicepkg_build $startdir $pkgname
+}
+
+package() {
+	devicepkg_package $startdir $pkgname
+	install -m755 "$srcdir/device-zte-p839f30.post-install" "$pkgdir/device-zte-p839f30.post-install"
+	install -Dm644 "$srcdir/50-zte-p839f30.gschema.override" \
+		"$pkgdir/usr/share/glib-2.0/schemas/50-zte-p839f30.gschema.override"
+}
+
+nonfree_firmware() {
+	pkgdesc="WiFi firmware (WCNSS NV + modem partition loader)"
+	depends="
+		msm-firmware-loader-wcnss
+		firmware-zte-p839f30-wcnss-nv
+		firmware-qcom-adreno-a420
+	"
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+383cf856904a21cace278dc1c8c8a0680859f962891af8b0957922ef55a2d4afc93fdfd43e0a44787351ef46c903fa118474aae022d797cbcfb369b39e3f78c7  deviceinfo
+89dbcc9bbd5bacaa83aaee208992601dc23c3a864200f4d69839385874027dee928250c7dc733e1101e03eb489ab507e0cf5ed0b9dca47f14bdf1121a2559fb8  modules-initfs
+158a787629c98b29b91bc14a9783b95e5d075c63134a031f5b1ae40ba77e94301d64ecf02819820ade9837e7b4b7ecf90077c9d274980ba5eadd9b1e050553a6  device-zte-p839f30.post-install
+bdeb9d3d9a7016b6e0aa78205e357d795da860e471196e68840671ad84b5dfab8bad5ae4ba6b522cdbbfb1d629035c51cc010a200341bdcb4bf26adf7414b77d  50-zte-p839f30.gschema.override
+"

@@ -1,0 +1,20 @@
+pkgname=firmware-zte-p839f30-wcnss-nv
+pkgver=1
+pkgrel=0
+pkgdesc="ZTE Blade S6 (P839F30) WiFi calibration (WCNSS NV)"
+url="https://postmarketos.org"
+arch="aarch64"
+license="proprietary"
+options="!check !strip !archcheck !tracedeps pmb:cross-native"
+source="WCNSS_qcom_wlan_nv.bin"
+
+_fwdir="/lib/firmware/postmarketos/wlan/prima"
+
+package() {
+	install -Dm644 "$srcdir"/WCNSS_qcom_wlan_nv.bin \
+		"$pkgdir/$_fwdir/WCNSS_qcom_wlan_nv.bin"
+}
+
+sha512sums="
+750cda2c0c8f2e5e9559f042bcda4dfa289eb3f3d96eca7a4bfd99836c215af7cc74cf14e47bf8d587cf9b46afe593f5de8a3dc76e7cfedb9661f47a7d966330  WCNSS_qcom_wlan_nv.bin
+"

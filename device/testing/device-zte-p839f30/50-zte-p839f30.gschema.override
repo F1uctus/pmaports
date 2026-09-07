@@ -1,0 +1,3 @@
+[org.gnome.shell.keybindings]
+toggle-overview=['XF86HomePage']
+toggle-message-tray=['XF86MenuKB']

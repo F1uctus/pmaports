@@ -1,0 +1,9 @@
+# USB gadget stack (NCM + RNDIS) for the initramfs debug-shell (telnet over USB)
+# and SSH-over-USB. These are built as modules (CONFIG_USB_CONFIGFS=m), so without
+# them the gadget never comes up — no telnet, no clean dmesg, no USB networking.
+# modprobe pulls deps (u_ether, configfs). The UDC (chipidea ci_hdrc) is built-in.
+libcomposite
+usb_f_ncm
+usb_f_rndis
+u_ether
+# WCNSS (WiFi/BT) intentionally omitted until later phase — needs firmware.

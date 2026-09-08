@@ -146,7 +146,8 @@ cwstm32_recover() {				# rebind on stall; non-zero if hub hard-hung
 	[ -n "$DEV" ]
 }
 STALL=16	# x0.5 s with no fresh data (read -ENXIO or zero jitter) => wedged hub
-still=0; prev=
+MAX_FAILS=3	# consecutive failed rebinds before giving up on the hub
+still=0; fails=0; prev=
 while :; do
 	x=$(cat "$DEV/in_accel_x_raw" 2>/dev/null)
 	y=$(cat "$DEV/in_accel_y_raw" 2>/dev/null)
@@ -154,7 +155,15 @@ while :; do
 	if [ -z "$x" ] || [ -z "$y" ] || [ -z "$z" ] || [ "$x $y $z" = "$prev" ]; then
 		still=$((still + 1))
 		if [ "$still" -ge "$STALL" ]; then
-			cwstm32_recover || sleep 30	# hard hang: back off (needs reboot)
+			if cwstm32_recover; then
+				fails=0
+			else
+				fails=$((fails + 1))
+				# each attempt unbinds the i2c driver and waits on a
+				# hub that is not answering; give up rather than churn
+				[ "$fails" -ge "$MAX_FAILS" ] && exit 0
+				sleep 30
+			fi
 			still=0; prev=
 		fi
 		sleep 0.5; continue

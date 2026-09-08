@@ -3,7 +3,7 @@
 pkgname=device-zte-p839f30
 pkgdesc="ZTE Blade S6 (P839F30)"
 pkgver=1
-pkgrel=35
+pkgrel=38
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -28,7 +28,10 @@ source="
 	device-zte-p839f30.post-install
 	50-zte-p839f30.gschema.override
 "
-subpackages="$pkgname-nonfree-firmware:nonfree_firmware"
+subpackages="
+	$pkgname-nonfree-firmware:nonfree_firmware
+	$pkgname-console-autologin:console_autologin
+	"
 
 build() {
 	devicepkg_build $startdir $pkgname
@@ -48,6 +51,14 @@ nonfree_firmware() {
 		firmware-zte-p839f30-wcnss-nv
 		firmware-qcom-adreno-a420
 	"
+	mkdir -p "$subpkgdir"
+}
+
+console_autologin() {
+	pkgdesc="Autologin on tty1 and the serial console"
+	install="$subpkgname.post-install"
+	depends="agetty"
+
 	mkdir -p "$subpkgdir"
 }
 

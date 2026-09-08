@@ -1,0 +1,15 @@
+#!/bin/sh
+# Autologin 'user' on tty1 and the ttyMSM0 serial console in busybox inittab.
+INITTAB=/etc/inittab
+[ -f "$INITTAB" ] || exit 0
+
+sed -i 's|^tty1::respawn:/sbin/getty 38400 tty1|tty1::respawn:/sbin/agetty --autologin user --noclear tty1 38400|' "$INITTAB"
+
+if grep -q '^ttyMSM0::respawn' "$INITTAB"; then
+	sed -i 's|^ttyMSM0::respawn:.*|ttyMSM0::respawn:/sbin/agetty --autologin user ttyMSM0 115200|' "$INITTAB"
+else
+	sed -i '/^tty1::respawn/i ttyMSM0::respawn:/sbin/agetty --autologin user ttyMSM0 115200' "$INITTAB"
+fi
+
+kill -HUP 1 2>/dev/null || true
+exit 0

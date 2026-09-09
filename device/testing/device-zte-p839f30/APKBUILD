@@ -3,7 +3,7 @@
 pkgname=device-zte-p839f30
 pkgdesc="ZTE Blade S6 (P839F30)"
 pkgver=1
-pkgrel=40
+pkgrel=41
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -65,6 +65,6 @@ console_autologin() {
 sha512sums="
 e53e83277095c6485353fea7087dec8a93384d10a6426247254227d24ea3d724826ddbe6771becd3817ccaf7a642b0cdd3d5335a7361b59f5d8eae96bbc030a4  deviceinfo
 89dbcc9bbd5bacaa83aaee208992601dc23c3a864200f4d69839385874027dee928250c7dc733e1101e03eb489ab507e0cf5ed0b9dca47f14bdf1121a2559fb8  modules-initfs
-07ae2a62133d1f637b1db602fcb23eeebee99a530483a7a594676d71e868896a5fbfe7a1bdcb08a9dbfe8036cecfb3750353e4590eda0ee697e340f0f6bdeec9  device-zte-p839f30.post-install
+2f12b0662271cc8940d129325b8419fbc8dbc5da6d0dc4f4b685082d787d28124e2c7acdf89afaa312bc11691ba47d1305d0674fff04269ca81106bf45c40a6f  device-zte-p839f30.post-install
 bdeb9d3d9a7016b6e0aa78205e357d795da860e471196e68840671ad84b5dfab8bad5ae4ba6b522cdbbfb1d629035c51cc010a200341bdcb4bf26adf7414b77d  50-zte-p839f30.gschema.override
 "

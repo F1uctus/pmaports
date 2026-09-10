@@ -80,15 +80,10 @@ fi
 rc-update add dbus default 2>/dev/null || true
 rc-update add bluetooth default 2>/dev/null || true
 
-# Audio (QDSP6/mpss): rmtfs serves the modem EFS so the modem DSP completes init
-# and advertises APR; its initd runs with -s, which boots the mpss remoteproc in
-# sync with rmtfs (no separate start hook needed). Starts after udev-settle.
-# rmtfs boots the modem DSP, which costs about 13 C of idle die temperature on a
-# phone whose EMI shield (its heat spreader) is removed. That is the whole
-# thermal headroom the Phosh compositor needs, so leaving it in the default
-# runlevel makes the GUI shut down at the 95 C GPU critical trip. Audio is fully
-# shipped - start it on demand with: rc-service rmtfs start
-rc-update del rmtfs default 2>/dev/null || true
+# Audio (QDSP6/mpss) and cellular: rmtfs serves the modem EFS so the modem DSP
+# completes init and advertises APR; its initd runs with -s, which boots the
+# mpss remoteproc in sync with rmtfs. Starts after udev-settle.
+rc-update add rmtfs default 2>/dev/null || true
 
 # wcn36xx cannot enter BMPS (beacon power save): the firmware answers
 # hal_enter_bmps with err=5 and the link drops seconds after associating.

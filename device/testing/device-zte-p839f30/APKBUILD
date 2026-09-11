@@ -3,7 +3,7 @@
 pkgname=device-zte-p839f30
 pkgdesc="ZTE Blade S6 (P839F30)"
 pkgver=1
-pkgrel=56
+pkgrel=68
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"

@@ -1,0 +1,54 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Date: Thu, 11 Sep 2026 22:50:00 +0300
+Subject: [PATCH] libcamera: Add the Samsung S5K5E2 sensor
+
+Without a database entry the software ISP cannot build a sensor helper,
+so it has no way to turn the analogue gain control into a real gain and
+auto exposure never converges.
+
+The S5K5E2 is a 1.4 um pixel sensor whose analogue gain register counts
+in 1/32 steps, and whose dark frames sit at 64 out of 10 bits.
+
+Signed-off-by: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+---
+--- a/src/libcamera/sensor/camera_sensor_properties.cpp
++++ b/src/libcamera/sensor/camera_sensor_properties.cpp
+@@ -503,6 +503,17 @@
+ 			},
+ 			.sensorDelays = { },
+ 		} },
++		{ "s5k5e2", {
++			.unitCellSize = { 1400, 1400 },
++			.testPatternModes = {
++				{ controls::draft::TestPatternModeOff, 0 },
++				{ controls::draft::TestPatternModeSolidColor, 1 },
++				{ controls::draft::TestPatternModeColorBars, 2 },
++				{ controls::draft::TestPatternModeColorBarsFadeToGray, 3 },
++				{ controls::draft::TestPatternModePn9, 4 },
++			},
++			.sensorDelays = { },
++		} },
+ 		{ "vd55g1", {
+ 			.unitCellSize = { 2160, 2160 },
+ 			.testPatternModes = {
+--- a/src/ipa/libipa/camera_sensor_helper.cpp
++++ b/src/ipa/libipa/camera_sensor_helper.cpp
+@@ -827,6 +827,18 @@
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("ov13858", CameraSensorHelperOv13858)
+ 
++class CameraSensorHelperS5k5e2 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperS5k5e2()
++	{
++		/* Measured on a dark frame: 64 at 10 bits. */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 32 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("s5k5e2", CameraSensorHelperS5k5e2)
++
+ class CameraSensorHelperVd55g1 : public CameraSensorHelper
+ {
+ public:

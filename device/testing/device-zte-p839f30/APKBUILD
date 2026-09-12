@@ -27,6 +27,7 @@ source="
 	modules-initfs
 	device-zte-p839f30.post-install
 	50-zte-p839f30.gschema.override
+	libcamera-configuration.yaml
 "
 subpackages="
 	$pkgname-nonfree-firmware:nonfree_firmware
@@ -42,6 +43,8 @@ package() {
 	install -m755 "$srcdir/device-zte-p839f30.post-install" "$pkgdir/device-zte-p839f30.post-install"
 	install -Dm644 "$srcdir/50-zte-p839f30.gschema.override" \
 		"$pkgdir/usr/share/glib-2.0/schemas/50-zte-p839f30.gschema.override"
+	install -Dm644 "$srcdir/libcamera-configuration.yaml" \
+		"$pkgdir/etc/libcamera/configuration.yaml"
 }
 
 nonfree_firmware() {

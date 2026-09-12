@@ -28,6 +28,7 @@ source="
 	device-zte-p839f30.post-install
 	50-zte-p839f30.gschema.override
 	libcamera-configuration.yaml
+	zte,blade-s6.conf
 "
 subpackages="
 	$pkgname-nonfree-firmware:nonfree_firmware
@@ -45,6 +46,8 @@ package() {
 		"$pkgdir/usr/share/glib-2.0/schemas/50-zte-p839f30.gschema.override"
 	install -Dm644 "$srcdir/libcamera-configuration.yaml" \
 		"$pkgdir/etc/libcamera/configuration.yaml"
+	install -Dm644 "$srcdir/zte,blade-s6.conf" \
+		"$pkgdir/usr/share/megapixels/config/zte,blade-s6.conf"
 }
 
 nonfree_firmware() {
@@ -70,4 +73,6 @@ e53e83277095c6485353fea7087dec8a93384d10a6426247254227d24ea3d724826ddbe6771becd3
 89dbcc9bbd5bacaa83aaee208992601dc23c3a864200f4d69839385874027dee928250c7dc733e1101e03eb489ab507e0cf5ed0b9dca47f14bdf1121a2559fb8  modules-initfs
 53301a22ad60de5025c41c4d0d6c91d8e31934943f0f675e7bd68a25b3a2cab46d75ccc7fe0a7def8b0381aead524d5e374dcf9e42d9ac96d914d4089a63ad87  device-zte-p839f30.post-install
 bdeb9d3d9a7016b6e0aa78205e357d795da860e471196e68840671ad84b5dfab8bad5ae4ba6b522cdbbfb1d629035c51cc010a200341bdcb4bf26adf7414b77d  50-zte-p839f30.gschema.override
+807a428cb11b75d1b09fe728a716b844dfc2b9b83a5418edc8af695349bea3ef22aa471f178bd4b25aaabced562c163ab21a6b104b40b0df83ade41f542befc8  libcamera-configuration.yaml
+76b11eaa1dce898a02b490e2ba024c43ac5c26a2671a70e82be72ed1844e0e9d1bb7216838a0cebb0ecceb81bee8ef66d1f048cafb338e43e5009a036a698bab  zte,blade-s6.conf
 "

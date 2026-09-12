@@ -1,0 +1,10 @@
+# The panel is 720x1280, so a preview larger than that is wasted work: the
+# software ISP debayers every pixel on the GPU and the application scales the
+# result back down on the CPU. Capping the output also makes libcamera pick a
+# smaller sensor mode, which cuts the CSI bandwidth and the heat with it.
+version: 1
+configuration:
+  pipelines:
+    simple:
+      max_output_width: 1280
+      max_output_height: 720

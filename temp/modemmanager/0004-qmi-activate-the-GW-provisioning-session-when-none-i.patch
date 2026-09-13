@@ -1,0 +1,213 @@
+From f6c03feae1144fccb61fb55d0ce3ba568cba6446 Mon Sep 17 00:00:00 2001
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Date: Sun, 13 Sep 2026 13:24:13 +0300
+Subject: [PATCH] qmi: activate the GW provisioning session when none is
+ selected
+
+Some Qualcomm modems (seen on the MSM8939 ZTE Blade S6) report the card
+as present and its USIM application as detected, but never select a
+primary GW provisioning session on their own; on Android the RIL does
+it. Card status then carries no GW primary index and ModemManager
+declares the SIM missing, even though the SIM works as soon as a
+session is activated.
+
+When the unlock check sees a present card with a USIM application but
+no GW primary session, activate that application once through UIM
+Change Provisioning Session and restart the retry count, so the usual
+polling picks up the SIM once it turns ready. This also covers the
+modem restarting underneath the host, which drops the session and
+makes ModemManager probe the modem again.
+---
+ src/mm-broadband-modem-qmi.c | 85 ++++++++++++++++++++++++++++++++++++
+ src/mm-modem-helpers-qmi.c   | 49 +++++++++++++++++++++
+ src/mm-modem-helpers-qmi.h   |  4 ++
+ 3 files changed, 138 insertions(+)
+
+diff --git a/src/mm-broadband-modem-qmi.c b/src/mm-broadband-modem-qmi.c
+index 1e72112..6ade451 100644
+--- a/src/mm-broadband-modem-qmi.c
++++ b/src/mm-broadband-modem-qmi.c
+@@ -114,6 +114,9 @@ struct _MMBroadbandModemQmiPrivate {
+     /* New devices may not support the legacy DMS UIM commands */
+     gboolean dms_uim_deprecated;
+ 
++    /* Some modems never select a GW provisioning session on their own */
++    gboolean uim_gw_provisioning_attempted;
++
+     /* Whether autoconnect disabling needs to be checked up during
+      * the device enabling */
+     gboolean autoconnect_checked;
+@@ -895,6 +898,81 @@ modem_load_unlock_required_finish (MMIfaceModem  *self,
+ 
+ static void load_unlock_required_context_step (GTask *task);
+ 
++static void
++unlock_required_uim_change_provisioning_session_ready (QmiClientUim *client,
++                                                       GAsyncResult *res,
++                                                       GTask        *task)
++{
++    MMBroadbandModemQmi                                     *self;
++    LoadUnlockRequiredContext                               *ctx;
++    g_autoptr(QmiMessageUimChangeProvisioningSessionOutput)  output = NULL;
++    g_autoptr(GError)                                        error = NULL;
++
++    self = g_task_get_source_object (task);
++    ctx = g_task_get_task_data (task);
++
++    output = qmi_client_uim_change_provisioning_session_finish (client, res, &error);
++    if (!output || !qmi_message_uim_change_provisioning_session_output_get_result (output, &error)) {
++        mm_obj_warn (self, "couldn't activate GW primary provisioning session: %s", error->message);
++        if (ctx->last_attempt)
++            g_task_return_new_error (task,
++                                     MM_MOBILE_EQUIPMENT_ERROR,
++                                     MM_MOBILE_EQUIPMENT_ERROR_SIM_NOT_INSERTED,
++                                     "QMI operation failed: GW primary session index unknown");
++        else
++            g_task_return_new_error (task,
++                                     MM_CORE_ERROR,
++                                     MM_CORE_ERROR_RETRY,
++                                     "QMI operation failed: No card found (retry)");
++        g_object_unref (task);
++        return;
++    }
++
++    mm_obj_info (self, "activated GW primary provisioning session");
++    g_task_return_new_error (task,
++                             MM_CORE_ERROR,
++                             MM_CORE_ERROR_RESET_AND_RETRY,
++                             "GW primary provisioning session activated (retry)");
++    g_object_unref (task);
++}
++
++static gboolean
++unlock_required_uim_activate_gw_provisioning (MMBroadbandModemQmi              *self,
++                                              QmiClientUim                     *client,
++                                              QmiMessageUimGetCardStatusOutput *output,
++                                              GTask                            *task)
++{
++    g_autoptr(QmiMessageUimChangeProvisioningSessionInput) input = NULL;
++    g_autoptr(GArray)                                      aid = NULL;
++    guint8                                                 slot = 0;
++
++    if (self->priv->uim_gw_provisioning_attempted ||
++        !mm_qmi_uim_get_card_status_output_find_unprovisioned_usim (output, &slot, &aid))
++        return FALSE;
++
++    self->priv->uim_gw_provisioning_attempted = TRUE;
++    mm_obj_info (self, "no GW primary provisioning session, activating USIM application in slot %u", slot);
++
++    input = qmi_message_uim_change_provisioning_session_input_new ();
++    qmi_message_uim_change_provisioning_session_input_set_session_change (
++        input,
++        QMI_UIM_SESSION_TYPE_PRIMARY_GW_PROVISIONING,
++        TRUE,
++        NULL);
++    qmi_message_uim_change_provisioning_session_input_set_application_information (
++        input,
++        slot,
++        aid,
++        NULL);
++    qmi_client_uim_change_provisioning_session (client,
++                                                input,
++                                                10,
++                                                g_task_get_cancellable (task),
++                                                (GAsyncReadyCallback) unlock_required_uim_change_provisioning_session_ready,
++                                                task);
++    return TRUE;
++}
++
+ static void
+ unlock_required_uim_get_card_status_ready (QmiClientUim *client,
+                                            GAsyncResult *res,
+@@ -922,6 +1000,13 @@ unlock_required_uim_get_card_status_ready (QmiClientUim *client,
+                                                   &lock,
+                                                   NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                                                   &error)) {
++        if (g_error_matches (error, MM_MOBILE_EQUIPMENT_ERROR, MM_MOBILE_EQUIPMENT_ERROR_SIM_NOT_INSERTED) &&
++            unlock_required_uim_activate_gw_provisioning (self, client, output, task)) {
++            g_error_free (error);
++            qmi_message_uim_get_card_status_output_unref (output);
++            return;
++        }
++
+         /* The device may report a SIM NOT INSERTED error if we're querying the
+          * card status soon after power on. We'll let the Modem interface generic
+          * logic retry loading the info a bit later if that's the case. This will
+diff --git a/src/mm-modem-helpers-qmi.c b/src/mm-modem-helpers-qmi.c
+index 9fc10cd..f1f7e8c 100644
+--- a/src/mm-modem-helpers-qmi.c
++++ b/src/mm-modem-helpers-qmi.c
+@@ -2910,6 +2910,55 @@ mm_firmware_unique_id_to_qmi_unique_id (const gchar  *unique_id,
+ 
+ /*****************************************************************************/
+ 
++gboolean
++mm_qmi_uim_get_card_status_output_find_unprovisioned_usim (QmiMessageUimGetCardStatusOutput  *output,
++                                                           guint8                            *o_slot,
++                                                           GArray                           **o_aid)
++{
++    GArray  *cards;
++    guint16  index_gw_primary = 0xFFFF;
++    guint    i;
++    guint    j;
++
++    if (!qmi_message_uim_get_card_status_output_get_card_status (
++            output,
++            &index_gw_primary,
++            NULL, /* index_1x_primary */
++            NULL, /* index_gw_secondary */
++            NULL, /* index_1x_secondary */
++            &cards,
++            NULL))
++        return FALSE;
++
++    if (((index_gw_primary & 0xFF00) >> 8) != 0xFF)
++        return FALSE;
++
++    for (i = 0; i < cards->len; i++) {
++        QmiMessageUimGetCardStatusOutputCardStatusCardsElement *card;
++
++        card = &g_array_index (cards, QmiMessageUimGetCardStatusOutputCardStatusCardsElement, i);
++        if (card->card_state != QMI_UIM_CARD_STATE_PRESENT)
++            continue;
++
++        for (j = 0; j < card->applications->len; j++) {
++            QmiMessageUimGetCardStatusOutputCardStatusCardsElementApplicationsElementV2 *app;
++
++            app = &g_array_index (card->applications, QmiMessageUimGetCardStatusOutputCardStatusCardsElementApplicationsElementV2, j);
++            if (app->type != QMI_UIM_CARD_APPLICATION_TYPE_USIM ||
++                !app->application_identifier_value ||
++                !app->application_identifier_value->len)
++                continue;
++
++            /* QMI slots are 1-based */
++            *o_slot = i + 1;
++            *o_aid = g_array_ref (app->application_identifier_value);
++            return TRUE;
++        }
++    }
++
++    return FALSE;
++}
++
+ gboolean
+ mm_qmi_uim_get_card_status_output_parse (gpointer                           log_object,
+                                          QmiMessageUimGetCardStatusOutput  *output,
+diff --git a/src/mm-modem-helpers-qmi.h b/src/mm-modem-helpers-qmi.h
+index 4f97bb6..2e67cd5 100644
+--- a/src/mm-modem-helpers-qmi.h
++++ b/src/mm-modem-helpers-qmi.h
+@@ -245,6 +245,10 @@ gboolean mm_qmi_uim_get_card_status_output_parse (gpointer
+                                                   guint                             *o_pers_retries,
+                                                   GError                           **error);
+ 
++gboolean mm_qmi_uim_get_card_status_output_find_unprovisioned_usim (QmiMessageUimGetCardStatusOutput  *output,
++                                                                    guint8                            *o_slot,
++                                                                    GArray                           **o_aid);
++
+ /*****************************************************************************/
+ /* UIM Get Configuration parsing */
+ 
+-- 
+2.55.0
+

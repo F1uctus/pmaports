@@ -2,7 +2,7 @@
 maintainer="Ilya I. Nikitin <ilya.i.nikitin@proton.me>"
 pkgname=modemmanager
 pkgver=1.25.95_git20260709
-pkgrel=0
+pkgrel=1
 _commit=d776ea38d29ca472a12323c1d45002ee19a66f57
 pkgdesc="ModemManager library"
 url="https://www.freedesktop.org/wiki/Software/ModemManager"
@@ -47,6 +47,7 @@ source="https://gitlab.freedesktop.org/mobile-broadband/ModemManager/-/archive/$
 
 	0001-intel-XMM7360-fix-big-endian-handling-of-ASN-integer.patch
 	0002-qmi-fallback-to-UIM-after-DMS-stays-uninitialized.patch
+	0003-respect-preferred-networks-disable-quirk-on-load.patch
 	"
 builddir="$srcdir"/ModemManager-$_commit
 
@@ -96,4 +97,5 @@ fd659330b2ec4e8368807053ec01498241dec153f6f2491bb17c42e2b81c8d9a98ff5f8c153874a6
 6e234cebcdec6d1afbca164ee5c13c96f7132ef31231d5c043cc5750ebe99e362a384d0463874b3c1c30799b433e0d3286add03af13c97fa406b4b5d2b78880c  modemmanager.initd
 5d79cb678af356a8350ea9c9f41b1af64d72ff5db4f16a5655481e2f7533f32d6ea45c10352d20a15233392cb02fd1d3c490c1268185787b1cc711e0bbda5f7f  0001-intel-XMM7360-fix-big-endian-handling-of-ASN-integer.patch
 de2e83a90c51415b8c5d7d2b8d0e976245a39680d2bd60eb7482609d1a8cefe0987cb33b06b6ba498065b84f04f43b6b974e0e6e930cdba5660382d001d8e000  0002-qmi-fallback-to-UIM-after-DMS-stays-uninitialized.patch
+9a69935d8be6a52943888df4435445b2ec19b4846f814fbdda995e59c3a6de0585daf7a7e54a2368109004bed4839d88ac4d75b17e74bd39cbadedb61deab3e5  0003-respect-preferred-networks-disable-quirk-on-load.patch
 "

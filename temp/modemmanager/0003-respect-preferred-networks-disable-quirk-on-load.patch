@@ -1,0 +1,25 @@
+From 7e34a1a8db0f6c6ae69fd7821f00b03237e63b9a Mon Sep 17 00:00:00 2001
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Date: Sun, 13 Sep 2026 22:34:00 +0000
+Subject: [PATCH] sim: respect preferred networks disable quirk on load
+
+---
+ src/mm-base-sim.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/mm-base-sim.c b/src/mm-base-sim.c
+index 195f0b0..d14b0db 100644
+--- a/src/mm-base-sim.c
++++ b/src/mm-base-sim.c
+@@ -2770,7 +2770,8 @@ interface_initialization_step (GTask *task)
+          * SIM type unknown) try to load it. */
+         if (IS_ESIM_WITHOUT_PROFILES (self))
+             mm_obj_dbg (self, "not loading preferred networks in eSIM without profiles");
+-        else if (mm_gdbus_sim_get_preferred_networks (MM_GDBUS_SIM (self)) == NULL &&
++        else if (!check_preferred_networks_disabled (self) &&
++                 mm_gdbus_sim_get_preferred_networks (MM_GDBUS_SIM (self)) == NULL &&
+                  MM_BASE_SIM_GET_CLASS (self)->load_preferred_networks &&
+                  MM_BASE_SIM_GET_CLASS (self)->load_preferred_networks_finish) {
+             MM_BASE_SIM_GET_CLASS (self)->load_preferred_networks (
+-- 
+2.51.0

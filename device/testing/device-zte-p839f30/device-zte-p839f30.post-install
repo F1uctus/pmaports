@@ -264,3 +264,5 @@ EOF
 chmod +x /etc/local.d/buffyboard-home.start
 rc-update add local default 2>/dev/null || true
 
+
+rc-update add msm-modem-uim-selection default 2>/dev/null || true

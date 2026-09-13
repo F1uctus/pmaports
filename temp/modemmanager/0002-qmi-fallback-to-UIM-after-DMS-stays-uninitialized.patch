@@ -1,0 +1,42 @@
+From 3860ffdf0bddbe86459e26020f37a49a49a2cb4e Mon Sep 17 00:00:00 2001
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Date: Sat, 12 Sep 2026 21:30:00 +0300
+Subject: [PATCH] qmi: fallback to UIM after DMS stays uninitialized
+
+Some older Qualcomm firmware implements the legacy DMS UIM commands but
+always answers UimUninitialized, while the dedicated UIM service is fully
+functional. ModemManager currently retries the DMS command seven times and
+then declares the SIM missing without trying the UIM service.
+
+Preserve the retries for transient initialization, then use the existing UIM
+fallback on the final attempt.
+---
+ src/mm-broadband-modem-qmi.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/src/mm-broadband-modem-qmi.c b/src/mm-broadband-modem-qmi.c
+index a9cb4448..a9413f5a 100644
+--- a/src/mm-broadband-modem-qmi.c
++++ b/src/mm-broadband-modem-qmi.c
+@@ -964,13 +964,17 @@ dms_uim_get_pin_status_ready (QmiClientDms *client,
+     ctx = g_task_get_task_data (task);
+ 
+     if (!qmi_message_dms_uim_get_pin_status_output_get_result (output, &error)) {
+-        /* We get InvalidQmiCommand on newer devices which don't like the legacy way */
++        /* Fall back after a final UimUninitialized response. */
+         if (g_error_matches (error,
+                              QMI_PROTOCOL_ERROR,
+                              QMI_PROTOCOL_ERROR_INVALID_QMI_COMMAND) ||
+             g_error_matches (error,
+                              QMI_PROTOCOL_ERROR,
+-                             QMI_PROTOCOL_ERROR_NOT_SUPPORTED)) {
++                             QMI_PROTOCOL_ERROR_NOT_SUPPORTED) ||
++            (ctx->last_attempt &&
++             g_error_matches (error,
++                              QMI_PROTOCOL_ERROR,
++                              QMI_PROTOCOL_ERROR_UIM_UNINITIALIZED))) {
+             g_error_free (error);
+             qmi_message_dms_uim_get_pin_status_output_unref (output);
+             /* Flag that the command is unsupported, and try with the new way */
+-- 
+2.51.0

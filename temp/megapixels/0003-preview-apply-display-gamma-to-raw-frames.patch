@@ -1,0 +1,53 @@
+From 3225fb5765853306663a8b0a7b7d2bb452a263bf Mon Sep 17 00:00:00 2001
+From: "Ilya I. Nikitin" <ilya.i.nikitin@proton.me>
+Date: Sat, 12 Sep 2026 15:49:16 +0300
+Subject: [PATCH] preview: apply display gamma to raw frames
+
+Raw sensor samples are linear, but the fallback path displayed them with gamma 1.0 when a DCP tone curve was absent or identity. Use a 2.2 display gamma for Bayer previews while leaving already-encoded YUV unchanged, and clamp negative matrix results before pow().
+
+Signed-off-by: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+---
+ data/debayer.frag        | 2 +-
+ data/debayer_packed.frag | 2 +-
+ src/gles2_debayer.c      | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/data/debayer.frag b/data/debayer.frag
+index a9fd0c8..081f076 100644
+--- a/data/debayer.frag
++++ b/data/debayer.frag
+@@ -36,6 +36,6 @@ main()
+     color -= blacklevel;
+     color *= color_matrix;
+ 
+-    vec3 gamma_color = pow(color, vec3(inv_gamma));
++    vec3 gamma_color = pow(max(color, vec3(0.0)), vec3(inv_gamma));
+     gl_FragColor = vec4(gamma_color, 1);
+ }
+diff --git a/data/debayer_packed.frag b/data/debayer_packed.frag
+index de10180..6314b0c 100644
+--- a/data/debayer_packed.frag
++++ b/data/debayer_packed.frag
+@@ -54,6 +54,6 @@ main()
+     color -= blacklevel;
+     color *= color_matrix;
+ 
+-    vec3 gamma_color = pow(color, vec3(inv_gamma));
++    vec3 gamma_color = pow(max(color, vec3(0.0)), vec3(inv_gamma));
+     gl_FragColor = vec4(gamma_color, 1);
+ }
+diff --git a/src/gles2_debayer.c b/src/gles2_debayer.c
+index a43732e..1248b7e 100644
+--- a/src/gles2_debayer.c
++++ b/src/gles2_debayer.c
+@@ -231,7 +231,7 @@ gles2_debayer_configure(GLES2Debayer *self,
+         check_gl();
+ 
+         /* Color calibration curves and matrices */
+-        float gamma = 1.0f;
++        float gamma = self->shader == SHADER_YUV ? 1.0f : 2.2f;
+         for (int i = 2; i < calibration.tone_curve_length; i += 2) {
+                 float g = calibration.tone_curve[i + 1] / calibration.tone_curve[i];
+                 if (g > gamma) {
+-- 
+2.55.0

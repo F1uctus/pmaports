@@ -3,7 +3,7 @@
 pkgname=device-zte-p839f30
 pkgdesc="ZTE Blade S6 (P839F30)"
 pkgver=1
-pkgrel=73
+pkgrel=77
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -32,6 +32,7 @@ source="
 	megapixels-device.conf
 	megapixels-front.dcp
 	megapixels-rear.dcp
+	megapixels-postprocess.sh
 	90-zte-p839f30-modem.rules
 "
 subpackages="
@@ -56,6 +57,8 @@ package() {
 		"$pkgdir/usr/share/megapixels/config/zte,blade-s6,Front.dcp"
 	install -Dm644 "$srcdir/megapixels-rear.dcp" \
 		"$pkgdir/usr/share/megapixels/config/zte,blade-s6,Rear.dcp"
+	install -Dm755 "$srcdir/megapixels-postprocess.sh" \
+		"$pkgdir/etc/megapixels/postprocess.sh"
 	install -Dm644 "$srcdir/90-zte-p839f30-modem.rules" \
 		"$pkgdir/usr/lib/udev/rules.d/90-zte-p839f30-modem.rules"
 }
@@ -87,5 +90,6 @@ bdeb9d3d9a7016b6e0aa78205e357d795da860e471196e68840671ad84b5dfab8bad5ae4ba6b522c
 b2e06537f7dc51f57758db7d50f67b9461f4e64ebab0bcc22c20b47d5646c24801918b57e7cea139e07380305f06564757e768cc0eb20e9e77aa67d12b1c2fc9  megapixels-device.conf
 aca55e347767627fd71910b7c29e96d56d50048de18374c60b9c25a9986048362322fec7239a087b2d73ccbc418a2228cc9f087980e264797d3e4c612ff54d71  megapixels-front.dcp
 b5f38997c5d68cf2abf8290a4390f454a7b9995b66f5eca46079dc017da1f5d7c1cfadbfac9caeb422eb847c0b539f783a828f38c4b2dab7428655d4c313a2a8  megapixels-rear.dcp
+9fff8e53aa09c68345d4889fb4603d6d4e19824f7b9c8f7a3aef76503c13e7c949051b4404b49cb474db7ae7d2156dfa1202fc1018aa17f31e6eea5222477290  megapixels-postprocess.sh
 271e7fbfafac63010df2a6c051794a53c341619abe43b9d2bf1cdcb620fa2a88a1ae1855d48fe4da0b597ebac0be82d2341f297ca0ab990cff8b0c92df937f87  90-zte-p839f30-modem.rules
 "

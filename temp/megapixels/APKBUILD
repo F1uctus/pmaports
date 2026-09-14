@@ -1,0 +1,44 @@
+# Forked from Alpine for temporary downstream patches
+# Contributor: Martijn Braam <martijn@brixit.nl>
+# Maintainer: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+pkgname=megapixels
+_pkgver=2.1.0
+pkgver=9999$_pkgver
+pkgrel=0
+pkgdesc="GTK+4 camera app for mobile devices"
+url="https://gitlab.com/megapixels-org/Megapixels"
+arch="all !s390x"
+license="GPL-3.0-only"
+depends="libraw-tools imagemagick exiftool"
+makedepends="
+	feedbackd-dev
+	glib-dev
+	gperf
+	gtk4.0-dev
+	libdng-dev
+	libmegapixels-dev
+	libxrandr-dev
+	meson
+	pulseaudio-dev
+	tiff-dev>=4.6.0t
+	zbar-dev
+	"
+source="https://gitlab.com/megapixels-org/Megapixels/-/archive/$_pkgver/Megapixels-$_pkgver.tar.bz2
+	0001-dcp-fix-calibration-profile-lookup.patch
+	"
+options="!check"
+builddir="$srcdir/Megapixels-$_pkgver"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+0269e3d119abe3ae9a2a69e6796329429a8b54e8bb3f4928c62a54cef5c665abb152d55f0d9d07ab53cd81b397b0d7e81b3a1dff0f6f1b15a2713d5c0e193c88  Megapixels-2.1.0.tar.bz2
+d3b9226f6e0ba8c4ec393c9fb04d482c4347c56be74595a9d8998d1f1311a778ea674cf8983733dd3ea49ec934507dc8893dd49ac4b2bd42a102f774701e24c0  0001-dcp-fix-calibration-profile-lookup.patch
+"

@@ -1,0 +1,52 @@
+From 289e8c33092f6578e68c5b3e0dd11490ef9d167a Mon Sep 17 00:00:00 2001
+From: "Ilya I. Nikitin" <ilya.i.nikitin@proton.me>
+Date: Sat, 12 Sep 2026 15:44:14 +0300
+Subject: [PATCH 1/2] dcp: fix calibration profile lookup
+
+The home-directory lookup used the device configuration filename, and the system search advanced through bytes in the first format string instead of entries in the path array. Both errors can select non-DCP paths and leave camera color calibration unusable.
+
+Signed-off-by: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+---
+ src/dcp.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/src/dcp.c b/src/dcp.c
+index bfd7d6f..1171a6d 100644
+--- a/src/dcp.c
++++ b/src/dcp.c
+@@ -72,24 +72,29 @@ find_calibration_by_model(size_t maxlen,
+                 config_home = mprintf("%s/.config", home);
+                 fch = 1;
+         }
+-        // Check in XDG_CONFIG_HOME/megapixels/config
+         snprintf(conffile,
+                  maxlen,
+-                 "%s/megapixels/config/%s.conf",
++                 "%s/megapixels/config/%s,%s.dcp",
+                  config_home,
+-                 model);
++                 model,
++                 sensor);
+         if (access(conffile, F_OK) != -1) {
+                 if (fch) {
+                         free(config_home);
+                 }
++                printf("Found calibration file at %s\n", conffile);
+                 return true;
+         }
++        if (fch) {
++                free(config_home);
++        }
+ 
+         static const char *paths[] = { "config/%s,%s.dcp",
+                                        SYSCONFDIR "/megapixels/config/%s,%s.dcp",
+                                        DATADIR "/megapixels/config/%s,%s.dcp",
+                                        NULL };
+-        for (const char *fmt = paths[0]; fmt; fmt++) {
++        for (size_t i = 0; paths[i] != NULL; i++) {
++                const char *fmt = paths[i];
+                 snprintf(conffile, maxlen, fmt, model, sensor);
+                 if (access(conffile, F_OK) != -1) {
+                         printf("Found calibration file at %s\n", conffile);
+-- 
+2.55.0

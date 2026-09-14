@@ -265,4 +265,36 @@ chmod +x /etc/local.d/buffyboard-home.start
 rc-update add local default 2>/dev/null || true
 
 
+# Shared FAT32 storage, owned by UID/GID 10000.
+mkdir -p /etc/skel/Storage
+grep -q 'PARTLABEL=fat' /etc/fstab 2>/dev/null || cat >> /etc/fstab <<'EOF'
+PARTLABEL=fat	/home/user/Storage	vfat	rw,nofail,uid=10000,gid=10000,umask=0022,shortname=mixed,utf8	0 0
+EOF
+
+mkdir -p /etc/skel/.config
+cat > /etc/skel/.config/user-dirs.dirs <<'EOF'
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOWNLOAD_DIR="$HOME/Storage/Download"
+XDG_TEMPLATES_DIR="$HOME/Templates"
+XDG_PUBLICSHARE_DIR="$HOME/Public"
+XDG_DOCUMENTS_DIR="$HOME/Storage/Documents"
+XDG_MUSIC_DIR="$HOME/Storage/Music"
+XDG_PICTURES_DIR="$HOME/Storage/Pictures"
+XDG_VIDEOS_DIR="$HOME/Storage/Movies"
+EOF
+
+cat > /etc/xdg/user-dirs.conf <<'EOF'
+enabled=False
+EOF
+
+cat > /etc/local.d/shared-storage.start <<'EOF'
+#!/bin/sh
+mountpoint -q /home/user/Storage || exit 0
+for d in DCIM/Camera Pictures Download Documents Music Movies; do
+	mkdir -p "/home/user/Storage/$d"
+done
+EOF
+chmod +x /etc/local.d/shared-storage.start
+
+
 rc-update add msm-modem-uim-selection default 2>/dev/null || true

@@ -1,0 +1,22 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Subject: [PATCH] pulse: ignore compressed ALSA cards for call routing
+
+PipeWire exposes compressed-offload devices with the same UCM ports as
+the PCM sound card. Selecting that duplicate leaves callaudiod without
+a usable PCM sink or microphone. Ignore compressed devices before card
+selection, while retaining PulseAudio cards without a device.api property.
+
+---
+--- a/src/cad-pulse.c
++++ b/src/cad-pulse.c
+@@ -465,6 +465,10 @@
+         return;
+     }
+ 
++    prop = pa_proplist_gets(info->proplist, "device.api");
++    if (g_strcmp0(prop, "alsa:compressed") == 0)
++        return;
++
+     prop = pa_proplist_gets(info->proplist, "alsa.card_name");
+     g_debug("CARD: prop %s = %s", "alsa.card_name", prop);
+     if (prop && g_str_has_prefix(prop, CARD_MODEM_NAME))

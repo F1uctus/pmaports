@@ -3,7 +3,7 @@
 pkgname=device-zte-p839f30
 pkgdesc="ZTE Blade S6 (P839F30)"
 pkgver=1
-pkgrel=71
+pkgrel=72
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -30,6 +30,8 @@ source="
 	50-zte-p839f30.gschema.override
 	libcamera-configuration.yaml
 	megapixels-device.conf
+	megapixels-front.dcp
+	megapixels-rear.dcp
 	90-zte-p839f30-modem.rules
 "
 subpackages="
@@ -50,6 +52,10 @@ package() {
 		"$pkgdir/etc/libcamera/configuration.yaml"
 	install -Dm644 "$srcdir/megapixels-device.conf" \
 		"$pkgdir/usr/share/megapixels/config/zte,blade-s6.conf"
+	install -Dm644 "$srcdir/megapixels-front.dcp" \
+		"$pkgdir/usr/share/megapixels/config/zte,blade-s6,Front.dcp"
+	install -Dm644 "$srcdir/megapixels-rear.dcp" \
+		"$pkgdir/usr/share/megapixels/config/zte,blade-s6,Rear.dcp"
 	install -Dm644 "$srcdir/90-zte-p839f30-modem.rules" \
 		"$pkgdir/usr/lib/udev/rules.d/90-zte-p839f30-modem.rules"
 }
@@ -77,7 +83,9 @@ e53e83277095c6485353fea7087dec8a93384d10a6426247254227d24ea3d724826ddbe6771becd3
 89dbcc9bbd5bacaa83aaee208992601dc23c3a864200f4d69839385874027dee928250c7dc733e1101e03eb489ab507e0cf5ed0b9dca47f14bdf1121a2559fb8  modules-initfs
 dcf3dc305b805ef056c4fd3d759eb656418bb13fc24057bb9b4ab78014f182e387e581f2dbc0599e13d4487675146f4f64e0b8c3a0d38a13c36a38f77c452ad0  device-zte-p839f30.post-install
 bdeb9d3d9a7016b6e0aa78205e357d795da860e471196e68840671ad84b5dfab8bad5ae4ba6b522cdbbfb1d629035c51cc010a200341bdcb4bf26adf7414b77d  50-zte-p839f30.gschema.override
-807a428cb11b75d1b09fe728a716b844dfc2b9b83a5418edc8af695349bea3ef22aa471f178bd4b25aaabced562c163ab21a6b104b40b0df83ade41f542befc8  libcamera-configuration.yaml
+862cfac029304ee56135c5f81e72338bbc8c0936065ae7caa680fd3fec81ee49417b703030969d0eb5459aa6113d91490e9c79e5f113d6de5f0d1d075a1b9da8  libcamera-configuration.yaml
 b2e06537f7dc51f57758db7d50f67b9461f4e64ebab0bcc22c20b47d5646c24801918b57e7cea139e07380305f06564757e768cc0eb20e9e77aa67d12b1c2fc9  megapixels-device.conf
+aca55e347767627fd71910b7c29e96d56d50048de18374c60b9c25a9986048362322fec7239a087b2d73ccbc418a2228cc9f087980e264797d3e4c612ff54d71  megapixels-front.dcp
+b5f38997c5d68cf2abf8290a4390f454a7b9995b66f5eca46079dc017da1f5d7c1cfadbfac9caeb422eb847c0b539f783a828f38c4b2dab7428655d4c313a2a8  megapixels-rear.dcp
 271e7fbfafac63010df2a6c051794a53c341619abe43b9d2bf1cdcb620fa2a88a1ae1855d48fe4da0b597ebac0be82d2341f297ca0ab990cff8b0c92df937f87  90-zte-p839f30-modem.rules
 "

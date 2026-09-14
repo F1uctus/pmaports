@@ -1,0 +1,48 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Subject: [PATCH] io: return buffers before reconfiguring the stream
+
+The process pipeline copies each frame and then queued its buffer return
+onto the io pipeline. A capture or the end of a burst switches the sensor
+mode from inside an io pipeline callback: it syncs the process pipeline,
+stops the stream and starts a new one, and only then do the queued returns
+run. They requeue indices that the new stream has already queued, so every
+capture ends in a run of VIDIOC_QBUF EINVAL errors.
+
+Return the buffer directly from the calling thread. The process pipeline
+is synced before every stream stop, so no return can race a stop, and
+VIDIOC_QBUF is safe alongside the io thread's VIDIOC_DQBUF.
+
+Blank frames dropped while flushing after a mode switch were never
+returned at all, leaking one buffer per blank frame; return them too.
+
+--- a/src/io_pipeline.c
++++ b/src/io_pipeline.c
+@@ -211,19 +211,10 @@
+         mp_pipeline_invoke(pipeline, capture, NULL, 0);
+ }
+ 
+-static void
+-release_buffer(MPPipeline *pipeline, const uint32_t *buffer_index)
+-{
+-        mp_camera_release_buffer(mpcamera, *buffer_index);
+-}
+-
+ void
+ mp_io_pipeline_release_buffer(uint32_t buffer_index)
+ {
+-        mp_pipeline_invoke(pipeline,
+-                           (MPPipelineCallback)release_buffer,
+-                           &buffer_index,
+-                           sizeof(uint32_t));
++        mp_camera_release_buffer(mpcamera, buffer_index);
+ }
+ 
+ static pid_t focus_continuous_task = 0;
+@@ -407,6 +398,7 @@
+ 
+                         if (image_is_blank) {
+                                 ++state_io.blank_frame_count;
++                                mp_io_pipeline_release_buffer(buffer.index);
+                                 return;
+                         }
+                 } else {

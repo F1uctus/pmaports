@@ -27,6 +27,7 @@ source="https://gitlab.com/megapixels-org/Megapixels/-/archive/$_pkgver/Megapixe
 	0001-dcp-fix-calibration-profile-lookup.patch
 	0002-pipeline-reset-controls-when-changing-cameras.patch
 	0003-preview-apply-display-gamma-to-raw-frames.patch
+	0004-preview-apply-DCP-forward-matrices-in-color-order.patch
 	"
 options="!check"
 builddir="$srcdir/Megapixels-$_pkgver"
@@ -45,4 +46,5 @@ sha512sums="
 d3b9226f6e0ba8c4ec393c9fb04d482c4347c56be74595a9d8998d1f1311a778ea674cf8983733dd3ea49ec934507dc8893dd49ac4b2bd42a102f774701e24c0  0001-dcp-fix-calibration-profile-lookup.patch
 b4761210d06a2ca0d483d96466c4b92cde23610ce3030d98313db61a1ecfec1b6d01b3b441ad848526188d34f892404a1337aa2dbb01f317ae08a3002e6b473f  0002-pipeline-reset-controls-when-changing-cameras.patch
 d2235c2f6b8a980850c51baee7af6e5993604983342a60ba834b7146442263b0ade7a743d4fb322099f168dfb2eeb09882155c72aa0d8a939339714d1ded4b1c  0003-preview-apply-display-gamma-to-raw-frames.patch
+f3f3a63952d3f3facb5f5da1bba4cd2167b6dd5653cd728a234cce2e2347ae5775d46b7cfa3348c4036ba55d0c681db7f652366819ff77f5de4568ce440ca4b6  0004-preview-apply-DCP-forward-matrices-in-color-order.patch
 "

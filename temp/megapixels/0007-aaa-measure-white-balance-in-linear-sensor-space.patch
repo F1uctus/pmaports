@@ -1,0 +1,218 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Subject: [PATCH] aaa: measure white balance before preview color processing
+
+The preview is gamma-encoded, color-matrix transformed and clipped. Dividing
+its channel averages by previous gains does not recover sensor RGB and
+creates an unstable magenta/green feedback loop on both Blade S6 cameras.
+
+Measure Bayer white balance in a linear shader pass before gains, DCP and
+gamma. Reject near-black and saturated samples, retain gains when no valid
+samples exist, and keep preview statistics for exposure and focus. Reuse
+the readback buffer and run the extra pass only on existing AAA frames.
+Keep the YUV path unchanged.
+
+--- a/data/debayer.frag
++++ b/data/debayer.frag
+@@ -6,6 +6,7 @@
+ uniform mat3 color_matrix;
+ uniform float inv_gamma;
+ uniform float blacklevel;
++uniform bool statistics;
+ 
+ varying vec2 top_left_uv;
+ varying vec2 top_right_uv;
+@@ -34,6 +35,10 @@
+     #endif
+ 
+     color -= blacklevel;
++    if (statistics) {
++        gl_FragColor = vec4(max(color, vec3(0.0)), 1);
++        return;
++    }
+     color = color_matrix * color;
+ 
+     vec3 gamma_color = pow(max(color, vec3(0.0)), vec3(inv_gamma));
+--- a/data/debayer_packed.frag
++++ b/data/debayer_packed.frag
+@@ -10,6 +10,7 @@
+ uniform float blacklevel;
+ uniform float row_length;
+ uniform float padding_ratio;
++uniform bool statistics;
+ 
+ varying vec2 top_left_uv;
+ varying vec2 top_right_uv;
+@@ -52,6 +53,10 @@
+     #endif
+ 
+     color -= blacklevel;
++    if (statistics) {
++        gl_FragColor = vec4(max(color, vec3(0.0)), 1);
++        return;
++    }
+     color = color_matrix * color;
+ 
+     vec3 gamma_color = pow(max(color, vec3(0.0)), vec3(inv_gamma));
+--- a/src/gles2_debayer.c
++++ b/src/gles2_debayer.c
+@@ -132,6 +132,7 @@
+                 glGetUniformLocation(self->program, "color_matrix");
+         self->uniform_inv_gamma = glGetUniformLocation(self->program, "inv_gamma");
+         self->uniform_blacklevel = glGetUniformLocation(self->program, "blacklevel");
++        self->uniform_statistics = glGetUniformLocation(self->program, "statistics");
+         if (libmegapixels_format_bits_per_pixel(self->format) == 10)
+                 self->uniform_row_length =
+                         glGetUniformLocation(self->program, "row_length");
+@@ -400,7 +401,8 @@
+ }
+ 
+ void
+-gles2_debayer_process(GLES2Debayer *self, GLuint dst_id, GLuint source_id)
++gles2_debayer_process(GLES2Debayer *self, GLuint dst_id, GLuint source_id,
++                      bool statistics)
+ {
+         glBindFramebuffer(GL_FRAMEBUFFER, self->frame_buffer);
+         glBindTexture(GL_TEXTURE_2D, dst_id);
+@@ -413,6 +415,7 @@
+         glActiveTexture(GL_TEXTURE0);
+         glBindTexture(GL_TEXTURE_2D, source_id);
+         glUniform1i(self->uniform_texture, 0);
++        glUniform1i(self->uniform_statistics, statistics);
+         check_gl();
+ 
+         gl_util_draw_quad(self->quad);
+--- a/src/gles2_debayer.h
++++ b/src/gles2_debayer.h
+@@ -34,6 +34,7 @@
+         GLint uniform_row_length;
+         GLint uniform_inv_gamma;
+         GLint uniform_blacklevel;
++        GLint uniform_statistics;
+ 
+         GLuint quad;
+ } GLES2Debayer;
+@@ -58,7 +59,8 @@
+                                float blue,
+                                float blacklevel);
+ 
+-void gles2_debayer_process(GLES2Debayer *self, GLuint dst_id, GLuint source_id);
++void gles2_debayer_process(GLES2Debayer *self, GLuint dst_id, GLuint source_id,
++                           bool statistics);
+ 
+ const char* gles2_shader_to_fragment(int shader);
+ const char* gles2_shader_to_vertex(int shader);
+--- a/src/process_pipeline.c
++++ b/src/process_pipeline.c
+@@ -539,7 +539,36 @@
+ }
+ 
+ static void
+-process_aaa()
++process_wb_statistics(uint32_t *pixels, float blacklevel, float averages[3])
++{
++        int width = output_buffer_width;
++        int height = output_buffer_height / 3;
++        size_t count = (size_t)width * height;
++        glReadPixels(0, height, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
++        uint64_t sums[3] = { 0 };
++        size_t valid = 0;
++        float white = 250.0f - blacklevel * 255.0f;
++
++        for (size_t i = 0; i < count; i++) {
++                unsigned int r = pixels[i] & 0xff;
++                unsigned int g = (pixels[i] >> 8) & 0xff;
++                unsigned int b = (pixels[i] >> 16) & 0xff;
++                if (r < 2 || g < 2 || b < 2 ||
++                    r > white || g > white || b > white) {
++                        continue;
++                }
++                sums[0] += r;
++                sums[1] += g;
++                sums[2] += b;
++                valid++;
++        }
++        for (int i = 0; i < 3; i++) {
++                averages[i] = valid ? (float)sums[i] / valid : 0.0f;
++        }
++}
++
++static void
++process_aaa(uint32_t *center, const float *wb)
+ {
+         bool auto_exposure =
+                 !state_proc.exposure.manual && state_proc.exposure.auto_control.id == 0;
+@@ -553,7 +582,6 @@
+ 
+         int width = output_buffer_width;
+         int height = output_buffer_height / 3;
+-        uint32_t *center = g_malloc_n(width * height * sizeof(uint32_t), 1);
+         glReadPixels(0, height, width, height, GL_RGBA, GL_UNSIGNED_BYTE, center);
+         libmegapixels_aaa_set_matrix(&state_proc.stats, IDENTITY, IDENTITY);
+         libmegapixels_aaa_software_statistics(
+@@ -620,20 +648,14 @@
+         }
+ 
+         if (auto_balance) {
+-                float r = state_proc.stats.avg_r;
+-                float g = state_proc.stats.avg_g;
+-                float b = state_proc.stats.avg_b;
+-
+-                // Revert the current gains set on the preview
+-                r /= state_proc.red;
+-                b /= state_proc.blue;
++                float r = wb ? wb[0] : state_proc.stats.avg_r / state_proc.red;
++                float g = wb ? wb[1] : state_proc.stats.avg_g;
++                float b = wb ? wb[2] : state_proc.stats.avg_b / state_proc.blue;
+ 
+                 float t = 2.0f;
+                 if (r < t && g < t && b < t) {
+                         // Don't try to AWB on very dark frames
+                 } else {
+-                        // Calculate the new R/B gains based on the average color of
+-                        // the frame
+                         float new_r = g / clamp_float(r, 1.0f, 999.0f);
+                         float new_b = g / clamp_float(b, 1.0f, 999.0f);
+ 
+@@ -646,7 +668,6 @@
+                                   state_proc.red,
+                                   state_proc.blue,
+                                   state_proc.blacklevel);
+-		g_free(center);
+ }
+ 
+ static GdkTexture *
+@@ -716,8 +737,20 @@
+         }
+         check_gl();
+ 
++        bool run_aaa = framecounter++ == 2;
++        bool raw_balance = run_aaa && gles2_debayer->texture_mode == TEXTURE_BAYER;
++        float wb[3];
++        uint32_t *center = run_aaa ?
++                g_malloc_n((size_t)output_buffer_width * (output_buffer_height / 3),
++                           sizeof(*center)) : NULL;
++        if (raw_balance) {
++                gles2_debayer_process(
++                        gles2_debayer, output_buffer->texture_id, input_texture, true);
++                process_wb_statistics(center, state_proc.blacklevel, wb);
++        }
++
+         gles2_debayer_process(
+-                gles2_debayer, output_buffer->texture_id, input_texture);
++                gles2_debayer, output_buffer->texture_id, input_texture, false);
+         check_gl();
+ 
+         glFinish();
+@@ -739,9 +772,10 @@
+         mp_process_pipeline_buffer_ref(output_buffer);
+         mp_main_set_preview(output_buffer);
+ 
+-        if (framecounter++ == 2) {
++        if (run_aaa) {
+                 framecounter = 0;
+-                process_aaa();
++                process_aaa(center, raw_balance ? wb : NULL);
++                g_free(center);
+         }
+ 
+         // Create a thumbnail from the preview for the last capture

@@ -4,7 +4,7 @@
 pkgname=megapixels
 _pkgver=2.1.0
 pkgver=9999$_pkgver
-pkgrel=0
+pkgrel=1
 pkgdesc="GTK+4 camera app for mobile devices"
 url="https://gitlab.com/megapixels-org/Megapixels"
 arch="all !s390x"
@@ -30,6 +30,7 @@ source="https://gitlab.com/megapixels-org/Megapixels/-/archive/$_pkgver/Megapixe
 	0004-preview-apply-DCP-forward-matrices-in-color-order.patch
 	0005-aaa-keep-DCP-matrices-out-of-white-balance.patch
 	0006-preview-pick-the-forward-matrix-for-the-scene-illumi.patch
+	0007-aaa-measure-white-balance-in-linear-sensor-space.patch
 	"
 options="!check"
 builddir="$srcdir/Megapixels-$_pkgver"
@@ -51,4 +52,5 @@ d2235c2f6b8a980850c51baee7af6e5993604983342a60ba834b7146442263b0ade7a743d4fb3220
 f3f3a63952d3f3facb5f5da1bba4cd2167b6dd5653cd728a234cce2e2347ae5775d46b7cfa3348c4036ba55d0c681db7f652366819ff77f5de4568ce440ca4b6  0004-preview-apply-DCP-forward-matrices-in-color-order.patch
 5230be9ab66f89e5792e0a05f824ea66fe0c3c56e4e8c6e53210f3c9a00bbad2f23b48263eca704c322c4d5b987a334f818cad6ebc6dbe134356f0bfd7d5d6ad  0005-aaa-keep-DCP-matrices-out-of-white-balance.patch
 fc2606fdc941205657df62407886ccb625efc979dd1193338d1a86b5998506fdd26eb94fedd588066fa50696b6213f74dce1ba3722dc59908a9e39dda663bd14  0006-preview-pick-the-forward-matrix-for-the-scene-illumi.patch
+a3756c89640e6e781cc6c0813262c7662091a3ec8f2e5d9385d1f8216b2814903a326328b45e9773c7cec55e408cc1234a50b9359378d4ed030ecbfd291de938  0007-aaa-measure-white-balance-in-linear-sensor-space.patch
 "

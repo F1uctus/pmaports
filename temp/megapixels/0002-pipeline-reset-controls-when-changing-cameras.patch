@@ -1,0 +1,84 @@
+From 8e05c75e0a3642e6891c4f96487a1ed3685477d7 Mon Sep 17 00:00:00 2001
+From: "Ilya I. Nikitin" <ilya.i.nikitin@proton.me>
+Date: Sat, 12 Sep 2026 15:44:14 +0300
+Subject: [PATCH 2/2] pipeline: reset controls when changing cameras
+
+Control request values were inherited from the previous camera or from zero-initialized application state. Sensors whose minimum analogue gain is non-zero then had each software-AE gain update immediately overwritten by the stale request. Reset descriptors and seed requests from the selected camera controls; skip software autofocus when no focus control exists.
+
+Signed-off-by: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+---
+ src/io_pipeline.c      | 21 +++++++++++++++++++--
+ src/process_pipeline.c |  5 +++--
+ 2 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/src/io_pipeline.c b/src/io_pipeline.c
+index 0879923..90c7f7f 100644
+--- a/src/io_pipeline.c
++++ b/src/io_pipeline.c
+@@ -595,7 +595,8 @@ init_controls()
+ static void
+ update_state(MPPipeline *pipeline, const mp_state_io *new_state)
+ {
+-        if (state_io.camera != new_state->camera) {
++        bool camera_changed = state_io.camera != new_state->camera;
++        if (camera_changed) {
+                 if (state_io.camera != NULL) {
+                         mp_process_pipeline_sync();
+                         mp_camera_stop_capture(mpcamera);
+@@ -607,6 +608,14 @@ update_state(MPPipeline *pipeline, const mp_state_io *new_state)
+                         capture_source = NULL;
+                 }
+ 
++                memset(&state_io.gain, 0, sizeof(state_io.gain));
++                memset(&state_io.dgain, 0, sizeof(state_io.dgain));
++                memset(&state_io.exposure, 0, sizeof(state_io.exposure));
++                memset(&state_io.focus, 0, sizeof(state_io.focus));
++                memset(&state_io.red, 0, sizeof(state_io.red));
++                memset(&state_io.blue, 0, sizeof(state_io.blue));
++                state_io.can_af_trigger = false;
++                state_io.trigger_af = false;
+                 state_io.camera = new_state->camera;
+                 if (state_io.camera) {
+                         mpcamera = mp_camera_new(state_io.camera);
+@@ -666,6 +675,14 @@ update_state(MPPipeline *pipeline, const mp_state_io *new_state)
+                                 pipeline, mpcamera, on_frame, NULL);
+ 
+                         init_controls();
++                        state_io.gain.value_req = state_io.gain.value;
++                        state_io.gain.manual_req = state_io.gain.manual;
++                        state_io.dgain.value_req = state_io.dgain.value;
++                        state_io.dgain.manual_req = state_io.dgain.manual;
++                        state_io.exposure.value_req = state_io.exposure.value;
++                        state_io.exposure.manual_req = state_io.exposure.manual;
++                        state_io.focus.value_req = state_io.focus.value;
++                        state_io.focus.manual_req = state_io.focus.manual;
+                 }
+         }
+         state_io.configuration = new_state->configuration;
+@@ -676,7 +693,7 @@ update_state(MPPipeline *pipeline, const mp_state_io *new_state)
+         state_io.device_accel_rotation = new_state->device_accel_rotation;
+         state_io.device_accel_rotation_good = new_state->device_accel_rotation_good;
+ 
+-        if (state_io.camera) {
++        if (state_io.camera && !camera_changed) {
+                 state_io.gain.value = new_state->gain.value;
+                 state_io.gain.value_req = new_state->gain.value_req;
+                 state_io.gain.manual = new_state->gain.manual;
+diff --git a/src/process_pipeline.c b/src/process_pipeline.c
+index 4b37afb..c58cdfd 100644
+--- a/src/process_pipeline.c
++++ b/src/process_pipeline.c
+@@ -543,8 +543,9 @@ process_aaa()
+ {
+         bool auto_exposure =
+                 !state_proc.exposure.manual && state_proc.exposure.auto_control.id == 0;
+-        bool auto_focus =
+-                !state_proc.focus.manual && state_proc.focus.auto_control.id == 0;
++        bool auto_focus = state_proc.focus.control.id != 0 &&
++                          !state_proc.focus.manual &&
++                          state_proc.focus.auto_control.id == 0;
+         bool auto_balance = TRUE;
+         if (!auto_exposure && !auto_focus && !auto_balance) {
+                 return;
+-- 
+2.55.0

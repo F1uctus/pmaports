@@ -3,7 +3,7 @@
 pkgname=device-zte-p839f30
 pkgdesc="ZTE Blade S6 (P839F30)"
 pkgver=1
-pkgrel=77
+pkgrel=79
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -20,7 +20,7 @@ depends="
 	alsa-utils
 	rmtfs
 	iw
-	msm-modem-uim-selection
+	soc-qcom-msm8916-rproc
 "
 makedepends="devicepkg-dev"
 source="

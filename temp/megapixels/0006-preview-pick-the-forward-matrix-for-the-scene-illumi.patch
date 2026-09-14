@@ -1,0 +1,256 @@
+From d9e644824a56459ecf7e45517b588643bc05b13d Mon Sep 17 00:00:00 2001
+From: "Ilya I. Nikitin" <ilya.i.nikitin@proton.me>
+Date: Sat, 12 Sep 2026 19:14:06 +0300
+Subject: [PATCH] preview: pick the forward matrix for the scene illuminant
+
+A DNG profile carries two calibrations, but the preview always used the
+first one. With the conventional tagging that is Standard light A, so every
+daylight frame was rendered through a tungsten matrix and came out with the
+wrong hue and too much saturation.
+
+Solve the white balance gains for the white point they imply and blend both
+calibrations in mireds, as a DNG renderer does. parse_calibration_file left
+illuminant_1 and illuminant_2 uninitialised, so carry them across and zero
+the struct. invert_matrix, until now unused, had a wrong term in the
+determinant and in the centre cofactor.
+---
+ src/dcp.c           |   4 +-
+ src/gles2_debayer.c | 136 ++++++++++++++++++++++++++++++++++++++++++++
+ src/gles2_debayer.h |   7 +++
+ src/matrix.c        |   4 +-
+ 4 files changed, 148 insertions(+), 3 deletions(-)
+
+diff --git a/src/dcp.c b/src/dcp.c
+index 1171a6d..b6a80ff 100644
+--- a/src/dcp.c
++++ b/src/dcp.c
+@@ -129,7 +129,7 @@ find_calibration(size_t maxlen, char *conffile, const char *sensor)
+ struct MPCameraCalibration
+ parse_calibration_file(const char *path)
+ {
+-        struct MPCameraCalibration result;
++        struct MPCameraCalibration result = { 0 };
+         libdng_info temp = { 0 };
+         libdng_new(&temp);
+         libdng_load_calibration_file(&temp, path);
+@@ -138,6 +138,8 @@ parse_calibration_file(const char *path)
+         memcpy(result.color_matrix_2, temp.color_matrix_2, 9 * sizeof(float));
+         memcpy(result.forward_matrix_1, temp.forward_matrix_1, 9 * sizeof(float));
+         memcpy(result.forward_matrix_2, temp.forward_matrix_2, 9 * sizeof(float));
++        result.illuminant_1 = temp.illuminant_1;
++        result.illuminant_2 = temp.illuminant_2;
+         result.tone_curve_length = temp.tone_curve_length;
+         result.tone_curve = malloc(temp.tone_curve_length * sizeof(float));
+         memcpy(result.tone_curve,
+diff --git a/src/gles2_debayer.c b/src/gles2_debayer.c
+index afee48a..e68105e 100644
+--- a/src/gles2_debayer.c
++++ b/src/gles2_debayer.c
+@@ -4,7 +4,9 @@
+ #include "dcp.h"
+ #include "gl_util.h"
+ #include "matrix.h"
++#include <math.h>
+ #include <stdlib.h>
++#include <string.h>
+ 
+ #define VERTEX_ATTRIBUTE 0
+ #define TEX_COORD_ATTRIBUTE 1
+@@ -160,6 +162,115 @@ gles2_debayer_use(GLES2Debayer *self)
+         gl_util_bind_quad(self->quad);
+ }
+ 
++/* Correlated colour temperature of an EXIF LightSource code (DNG 1.4, 6.4). */
++static float
++illuminant_temperature(unsigned short illuminant)
++{
++        switch (illuminant) {
++                case 1:  return 5500.0f;  /* Daylight */
++                case 2:  return 4200.0f;  /* Fluorescent */
++                case 3:  return 2856.0f;  /* Tungsten */
++                case 4:  return 5500.0f;  /* Flash */
++                case 9:  return 5500.0f;  /* Fine weather */
++                case 10: return 6500.0f;  /* Cloudy weather */
++                case 11: return 7500.0f;  /* Shade */
++                case 12: return 6430.0f;  /* Daylight fluorescent */
++                case 13: return 5000.0f;  /* Day white fluorescent */
++                case 14: return 4000.0f;  /* Cool white fluorescent */
++                case 15: return 3450.0f;  /* White fluorescent */
++                case 17: return 2856.0f;  /* Standard light A */
++                case 18: return 4874.0f;  /* Standard light B */
++                case 19: return 6774.0f;  /* Standard light C */
++                case 20: return 5503.0f;  /* D55 */
++                case 21: return 6504.0f;  /* D65 */
++                case 22: return 7504.0f;  /* D75 */
++                case 23: return 5003.0f;  /* D50 */
++                case 24: return 3200.0f;  /* ISO studio tungsten */
++                default: return 0.0f;
++        }
++}
++
++/* McCamy's cubic fit for CCT from CIE 1931 xy. */
++static float
++xy_to_temperature(float x, float y)
++{
++        float n = (x - 0.3320f) / (0.1858f - y);
++        return ((449.0f * n + 3525.0f) * n + 6823.3f) * n + 5520.33f;
++}
++
++/* Weight of calibration 1; the two are blended linearly in mireds. */
++static float
++calibration_weight(const GLES2Debayer *self, float temperature)
++{
++        if (temperature <= self->temperature_1) {
++                return 1.0f;
++        }
++        if (temperature >= self->temperature_2) {
++                return 0.0f;
++        }
++        return (1.0f / temperature - 1.0f / self->temperature_2) /
++               (1.0f / self->temperature_1 - 1.0f / self->temperature_2);
++}
++
++static void
++blend_matrices(const float a[9], const float b[9], float weight, float out[9])
++{
++        for (int i = 0; i < 9; i++) {
++                out[i] = weight * a[i] + (1.0f - weight) * b[i];
++        }
++}
++
++/*
++ * Choose the forward matrix for the illuminant the white balance implies.
++ *
++ * The gains name a camera neutral, but the colour matrix that turns that
++ * neutral into a white point is itself chosen by the white point, so the
++ * two are solved together (DNG 1.4, 6.4, NeutralToXY).
++ */
++static void
++select_calibration(GLES2Debayer *self, float red, float blue)
++{
++        float neutral[3] = { 1.0f / red, 1.0f, 1.0f / blue };
++        float x = 0.3457f, y = 0.3585f; /* D50 */
++        float weight = 1.0f;
++
++        for (int i = 0; i < 30; i++) {
++                float matrix[9], inverse[9], xyz[3], sum, nx, ny;
++
++                weight = calibration_weight(self, xy_to_temperature(x, y));
++                blend_matrices(self->color_matrix_1,
++                               self->color_matrix_2,
++                               weight,
++                               matrix);
++                invert_matrix(matrix, inverse);
++
++                for (int r = 0; r < 3; r++) {
++                        xyz[r] = inverse[r * 3 + 0] * neutral[0] +
++                                 inverse[r * 3 + 1] * neutral[1] +
++                                 inverse[r * 3 + 2] * neutral[2];
++                }
++                sum = xyz[0] + xyz[1] + xyz[2];
++                if (!isfinite(sum) || sum <= 0.0f) {
++                        return;
++                }
++                nx = xyz[0] / sum;
++                ny = xyz[1] / sum;
++                if (fabsf(nx - x) < 1e-6f && fabsf(ny - y) < 1e-6f) {
++                        x = nx;
++                        y = ny;
++                        break;
++                }
++                x = nx;
++                y = ny;
++        }
++
++        weight = calibration_weight(self, xy_to_temperature(x, y));
++        blend_matrices(self->forward_matrix_1,
++                       self->forward_matrix_2,
++                       weight,
++                       self->forward_matrix);
++}
++
+ void
+ gles2_debayer_set_shading(GLES2Debayer *self,
+                           float red,
+@@ -173,6 +284,9 @@ gles2_debayer_set_shading(GLES2Debayer *self,
+                 0,   0, blue,
+                 // clang-format on
+         };
++        if (self->dual_illuminant) {
++                select_calibration(self, red, blue);
++        }
+         if (self->forward_matrix[0]) {
+                 float balanced[9];
+                 float xyzd65[9];
+@@ -243,9 +357,31 @@ gles2_debayer_configure(GLES2Debayer *self,
+         glUniform1f(self->uniform_inv_gamma, 1.0f / gamma);
+         check_gl();
+ 
++        bool has_second = false;
+         for (int i = 0; i < 9; i++) {
+                 self->forward_matrix[i] = calibration.forward_matrix_1[i];
++                self->forward_matrix_1[i] = calibration.forward_matrix_1[i];
++                self->forward_matrix_2[i] = calibration.forward_matrix_2[i];
++                self->color_matrix_1[i] = calibration.color_matrix_1[i];
++                self->color_matrix_2[i] = calibration.color_matrix_2[i];
++                has_second |= calibration.forward_matrix_2[i] != 0.0f;
++        }
++        self->temperature_1 = illuminant_temperature(calibration.illuminant_1);
++        self->temperature_2 = illuminant_temperature(calibration.illuminant_2);
++        if (self->temperature_1 > self->temperature_2) {
++                float swap[9];
++                float temperature = self->temperature_1;
++                self->temperature_1 = self->temperature_2;
++                self->temperature_2 = temperature;
++                memcpy(swap, self->forward_matrix_1, sizeof(swap));
++                memcpy(self->forward_matrix_1, self->forward_matrix_2, sizeof(swap));
++                memcpy(self->forward_matrix_2, swap, sizeof(swap));
++                memcpy(swap, self->color_matrix_1, sizeof(swap));
++                memcpy(self->color_matrix_1, self->color_matrix_2, sizeof(swap));
++                memcpy(self->color_matrix_2, swap, sizeof(swap));
+         }
++        self->dual_illuminant = has_second && self->temperature_1 > 0.0f &&
++                                self->temperature_2 > self->temperature_1;
+ 
+         gles2_debayer_set_shading(self, 1.0f, 1.0f, 0.0f);
+ 
+diff --git a/src/gles2_debayer.h b/src/gles2_debayer.h
+index b180046..454eb22 100644
+--- a/src/gles2_debayer.h
++++ b/src/gles2_debayer.h
+@@ -15,6 +15,13 @@ typedef struct {
+         int format;
+         int shader;
+         float forward_matrix[9];
++        float forward_matrix_1[9];
++        float forward_matrix_2[9];
++        float color_matrix_1[9];
++        float color_matrix_2[9];
++        float temperature_1;
++        float temperature_2;
++        bool dual_illuminant;
+         int texture_mode;
+ 
+         GLuint frame_buffer;
+diff --git a/src/matrix.c b/src/matrix.c
+index 08c1f04..2fec545 100644
+--- a/src/matrix.c
++++ b/src/matrix.c
+@@ -31,12 +31,12 @@ invert_matrix(const float in[9], float out[9])
+ {
+         float det = in[0] * (in[4] * in[8] - in[5] * in[7]) -
+                     in[1] * (in[3] * in[8] - in[5] * in[6]) +
+-                    in[2] * (in[3] * in[7] - in[4] * in[7]);
++                    in[2] * (in[3] * in[7] - in[4] * in[6]);
+         out[0] = (in[4] * in[8] - in[7] * in[5]) / det;
+         out[1] = (in[7] * in[2] - in[1] * in[8]) / det;
+         out[2] = (in[1] * in[5] - in[4] * in[2]) / det;
+         out[3] = (in[6] * in[5] - in[3] * in[8]) / det;
+-        out[4] = (in[0] * in[8] - in[6] * in[5]) / det;
++        out[4] = (in[0] * in[8] - in[2] * in[6]) / det;
+         out[5] = (in[3] * in[2] - in[0] * in[5]) / det;
+         out[6] = (in[3] * in[7] - in[6] * in[4]) / det;
+         out[7] = (in[6] * in[1] - in[0] * in[7]) / det;
+-- 
+2.55.0
+

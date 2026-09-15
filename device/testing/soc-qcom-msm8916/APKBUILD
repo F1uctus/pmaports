@@ -2,7 +2,7 @@ maintainer="Nikita Travkin <nikita@trvn.ru>"
 pkgname=soc-qcom-msm8916
 pkgdesc="Common package for Qualcomm MSM8916 devices"
 pkgver=27
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="BSD-3-Clause"
 arch="aarch64 armv7"
@@ -82,5 +82,5 @@ eee73ae7895fb6772b35a190956d17642d08af47a0fa5dfd022052c5b30c99cf9649215aef161ddc
 3a4a9322839d4b3ef9d79668a37840a9f444954759ae3c512e694051d2f9a2573db42ad6c4c1a5c75eeb861232a27ba1a8cef9b503decd54ead25a96e3dd6f98  q6voiced.conf
 bcebc36ec62140f4620d462be2b95858adae380e5d74f6b9c9b956fb76a6541f39749f4dcec6ac3c39b868dbfed6fac7a34ba357510532a3df2d39f7ea818d55  77-modem-samsung-msm8916.rules
 de35a32f697247e4a8419647b9c9fece9bc7f41c0e2377d01659ad0dc1ba21b08d3227193053d7cd1ec5006370db574472516f0d0061fb9d2d9509f27f6212d3  adreno-a306-quirks.sh
-56c348696a36111c35999bf52871c7dd7829d482ae006893b99c36cc54c8ef6d7b184bb526b8361ae9b93dc4e195c6efe643fc94e77d9f4c078ae9368812c98f  wireplumber-msm8916-s16le.conf
+25d2e0c9c405ed9c52ec73f05d5feb8a005029de964284d20a743eaea138e617f5658b467082569da032453a7977eef086b365c389bc32a352f8c59e44a41f6b  wireplumber-msm8916-s16le.conf
 "

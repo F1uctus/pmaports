@@ -1,0 +1,24 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Subject: [PATCH] media roles: remix through a common channel layout
+
+Capture-only stereo positions let the playback side negotiate mono while
+the loopback copies only its first channel. Set the common channel layout
+so PipeWire remixes stereo before sending it to a mono destination.
+
+--- a/data/media-role-nodes.conf
++++ b/data/media-role-nodes.conf
+@@ -22,13 +22,13 @@
+     actions = {
+       merge = {
+         arguments = {
++          audio.position = [ FL, FR ]
+           capture.props = {
+             # Explicitly mark all these sinks as valid role-based policy
+             # targets, meaning that any links between streams and these sinks
+             # will be managed by the role-based policy
+             policy.role-based.target = true
+ 
+-            audio.position = [ FL, FR ]
+             media.class = Audio/Sink
+           }
+           playback.props = {

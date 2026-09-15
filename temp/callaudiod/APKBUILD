@@ -2,7 +2,7 @@
 # Maintainer: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
 pkgname=callaudiod
 pkgver=0.1.99
-pkgrel=1
+pkgrel=2
 pkgdesc="Call audio routing daemon"
 url="https://gitlab.com/mobian1/callaudiod"
 arch="all"
@@ -15,6 +15,7 @@ subpackages="
 	"
 source="https://gitlab.com/mobian1/callaudiod/-/archive/$pkgver/callaudiod-$pkgver.tar.gz
 	0001-pulse-ignore-compressed-ALSA-cards.patch
+	0002-pulse-route-outputs-across-UCM-profiles.patch
 	"
 
 build() {
@@ -42,4 +43,5 @@ callaudiocli() {
 sha512sums="
 8243189cae4ea2d37f7773eaaf1f66b80357ca2803adcaed3eb57f57fce80c13e0667f1be7bac00256318f2cc2f790c388f1d56496d22f34377c4d6a0b43e5c0  callaudiod-0.1.99.tar.gz
 038e9fd2e1f45b84bb9f77551707e419cdaeac74bf16a890f6e107498180bdee1ce88685a5ad71b3c2ef6fd9f503f23116f9fe835fcb4dc828c230073be3efbe  0001-pulse-ignore-compressed-ALSA-cards.patch
+9cf2f7cda8e7b18a04fa3d0ccb81ba7d70bd90d3b1e734745ec5a8fb2db4ff4e779e1cdeb51c298729f759ac520c45acec7989390c41e68e4312e2be4b91f548  0002-pulse-route-outputs-across-UCM-profiles.patch
 "

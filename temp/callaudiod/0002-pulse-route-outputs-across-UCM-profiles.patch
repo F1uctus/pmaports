@@ -1,0 +1,223 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Subject: [PATCH] pulse: select output routes across UCM profiles
+
+PipeWire can expose separate HiFi profiles for each output and microphone
+pair. A sink then has only one port, so selecting a speaker by inspecting
+that sink silently succeeds without changing the route. Choose from the
+card ports, retain the current input pairing and UCM verb when selecting
+a new profile, and reject requests with no available route. Call entry
+still prefers headphones or earpiece; call exit restores the preferred
+media output.
+
+---
+--- a/src/cad-pulse.c
++++ b/src/cad-pulse.c
+@@ -916,63 +916,116 @@
+     }
+ }
+ 
+-static void set_output_port(pa_context *ctx, const pa_sink_info *info, int eol, void *data)
++static gboolean port_has_profile(const pa_card_port_info *port,
++                                 const pa_card_profile_info2 *profile)
++{
++    if (!profile)
++        return FALSE;
++
++    for (guint i = 0; i < port->n_profiles; i++) {
++        if (g_strcmp0(port->profiles2[i]->name, profile->name) == 0)
++            return TRUE;
++    }
++    return FALSE;
++}
++
++static void set_output_port(pa_context *ctx, const pa_card_info *info, int eol, void *data)
+ {
+     CadPulseOperation *operation = data;
++    pa_card_port_info *target_port = NULL;
++    pa_card_profile_info2 *target_profile = NULL;
+     pa_operation *op = NULL;
+-    const gchar *target_port;
+-
+-    if (eol != 0)
+-        return;
+-
+-    if (!info) {
+-        g_critical("PA returned no sink info (eol=%d)", eol);
+-        return;
+-    }
+-
+-    if (info->card != operation->pulse->card_id || info->index != operation->pulse->sink_id)
+-        return;
+-
+-    if (operation->op && operation->op->type == CAD_OPERATION_SELECT_MODE) {
+-        /*
+-         * When switching to voice call mode, we want to switch to any port
+-         * other than the speaker; this makes sure we use the headphones if they
+-         * are connected, and the earpiece otherwise.
+-         * When switching back to normal mode, the highest priority port is to
+-         * be selected anyway.
+-         */
+-        if (operation->value == CALL_AUDIO_MODE_CALL)
+-            target_port = get_available_sink_port(info, operation->pulse->speaker_port);
+-        else
+-            target_port = get_available_sink_port(info, NULL);
++    const char *verb = NULL;
++    gboolean preserve_input = FALSE;
++    gboolean force_speaker;
++    gboolean exclude_speaker;
++
++    if (eol > 0)
++        return;
++    if (eol < 0 || !info || info->index != operation->pulse->card_id) {
++        operation_complete_cb(ctx, 0, operation);
++        return;
++    }
++
++    force_speaker = operation->op->type == CAD_OPERATION_ENABLE_SPEAKER &&
++                    operation->value;
++    exclude_speaker = operation->op->type == CAD_OPERATION_SELECT_MODE ?
++                      operation->value == CALL_AUDIO_MODE_CALL : !operation->value;
++
++    for (guint i = 0; i < info->n_ports; i++) {
++        pa_card_port_info *port = info->ports[i];
++        gboolean speaker = port->type == PA_DEVICE_PORT_TYPE_SPEAKER;
++
++        if (port->direction != PA_DIRECTION_OUTPUT ||
++            port->available == PA_PORT_AVAILABLE_NO ||
++            (force_speaker && !speaker) || (exclude_speaker && speaker))
++            continue;
++        if (!target_port || port->priority > target_port->priority)
++            target_port = port;
++    }
++
++    if (!target_port) {
++        operation_complete_cb(ctx, 0, operation);
++        return;
++    }
++
++    if (info->active_profile2) {
++        if (g_str_has_prefix(info->active_profile2->name, SND_USE_CASE_VERB_VOICECALL))
++            verb = SND_USE_CASE_VERB_VOICECALL;
++        else if (g_str_has_prefix(info->active_profile2->name, SND_USE_CASE_VERB_HIFI))
++            verb = SND_USE_CASE_VERB_HIFI;
++    }
++
++    for (guint i = 0; i < target_port->n_profiles; i++) {
++        pa_card_profile_info2 *profile = target_port->profiles2[i];
++        gboolean shared_input = FALSE;
++
++        if (!profile->available || (verb && !g_str_has_prefix(profile->name, verb)))
++            continue;
++        if (info->active_profile2 &&
++            g_strcmp0(profile->name, info->active_profile2->name) == 0) {
++            target_profile = profile;
++            break;
++        }
++
++        for (guint j = 0; j < info->n_ports; j++) {
++            pa_card_port_info *port = info->ports[j];
++
++            if (port->direction == PA_DIRECTION_INPUT &&
++                port_has_profile(port, info->active_profile2) &&
++                port_has_profile(port, profile)) {
++                shared_input = TRUE;
++                break;
++            }
++        }
++        if (!target_profile || (shared_input && !preserve_input) ||
++            (shared_input == preserve_input && profile->priority > target_profile->priority)) {
++            target_profile = profile;
++            preserve_input = shared_input;
++        }
++    }
++
++    if (!target_profile) {
++        operation_complete_cb(ctx, 0, operation);
++        return;
++    }
++
++    if (info->active_profile2 &&
++        g_strcmp0(target_profile->name, info->active_profile2->name) == 0) {
++        op = pa_context_set_sink_port_by_index(ctx, operation->pulse->sink_id,
++                                               target_port->name,
++                                               operation_complete_cb, operation);
+     } else {
+-        /*
+-         * When forcing speaker output, we simply select the speaker port.
+-         * When disabling speaker output, we want the highest priority port
+-         * other than the speaker, so that we use the headphones if connected,
+-         * and the earpiece otherwise.
+-         */
+-        if (operation->value)
+-            target_port = operation->pulse->speaker_port;
+-        else
+-            target_port = get_available_sink_port(info, operation->pulse->speaker_port);
+-    }
+-
+-    g_debug("active port is '%s', target port is '%s'", info->active_port->name, target_port);
+-
+-    if (target_port && g_strcmp0(info->active_port->name, target_port) != 0) {
+-        g_debug("switching to target port '%s'", target_port);
+-        op = pa_context_set_sink_port_by_index(ctx, operation->pulse->sink_id,
+-                                               target_port,
+-                                               operation_complete_cb, operation);
+-    }
+-
+-    if (op) {
++        g_debug("switching to output profile '%s'", target_profile->name);
++        op = pa_context_set_card_profile_by_index(ctx, info->index,
++                                                  target_profile->name,
++                                                  operation_complete_cb, operation);
++    }
++
++    if (op)
+         pa_operation_unref(op);
+-    } else {
+-        g_debug("%s: nothing to be done", __func__);
+-        operation_complete_cb(ctx, 1, operation);
+-    }
++    else
++        operation_complete_cb(ctx, 0, operation);
+ }
+ 
+ /**
+@@ -1030,14 +1083,14 @@
+                                                operation->pulse->card_id,
+                                                set_card_profile, operation);
+     } else {
+-        if (operation->pulse->sink_id < 0) {
+-            g_warning("card has no voice profile and no usable sink");
++        if (operation->pulse->card_id < 0) {
++            g_warning("no usable sound card");
+             goto error;
+         }
+         g_debug("card doesn't have voice profile, switching output port");
+ 
+-        op = pa_context_get_sink_info_by_index(operation->pulse->ctx,
+-                                               operation->pulse->sink_id,
++        op = pa_context_get_card_info_by_index(operation->pulse->ctx,
++                                               operation->pulse->card_id,
+                                                set_output_port, operation);
+     }
+ 
+@@ -1073,16 +1126,16 @@
+ 
+     operation->pulse = cad_pulse_get_default();
+ 
+-    if (operation->pulse->sink_id < 0) {
+-        g_warning("card has no usable sink");
++    if (operation->pulse->card_id < 0) {
++        g_warning("no usable sound card");
+         goto error;
+     }
+ 
+     operation->op = cad_op;
+     operation->value = (guint)enable;
+ 
+-    op = pa_context_get_sink_info_by_index(operation->pulse->ctx,
+-                                           operation->pulse->sink_id,
++    op = pa_context_get_card_info_by_index(operation->pulse->ctx,
++                                           operation->pulse->card_id,
+                                            set_output_port, operation);
+     if (op)
+         pa_operation_unref(op);

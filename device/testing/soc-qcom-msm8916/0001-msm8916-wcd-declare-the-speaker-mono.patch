@@ -1,0 +1,20 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Subject: [PATCH] msm8916-wcd: declare the speaker mono
+
+The speaker mixer routes RX1 to the single RX3 speaker DAC. Advertising
+stereo playback silently discards the right channel. Declare one playback
+channel so audio servers downmix stereo sources before sending them to
+the codec.
+
+---
+--- a/ucm2/codecs/msm8916-wcd/Speaker.conf
++++ b/ucm2/codecs/msm8916-wcd/Speaker.conf
+@@ -21,7 +21,7 @@
+ 
+ 	Value {
+ 		PlaybackPCM "${var:WcdPlaybackPCM}"
+-		PlaybackChannels 2
++		PlaybackChannels 1
+ 		PlaybackPriority 200
+ 	}
+ }

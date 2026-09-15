@@ -2,7 +2,7 @@ maintainer="Nikita Travkin <nikita@trvn.ru>"
 pkgname=soc-qcom-msm8916
 pkgdesc="Common package for Qualcomm MSM8916 devices"
 pkgver=27
-pkgrel=1
+pkgrel=2
 url="https://postmarketos.org"
 license="BSD-3-Clause"
 arch="aarch64 armv7"
@@ -22,23 +22,19 @@ source="$pkgname-$_ucm_commit.tar.gz::https://github.com/msm8916-mainline/alsa-u
 	77-modem-samsung-msm8916.rules
 	adreno-a306-quirks.sh
 	wireplumber-msm8916-s16le.conf
+	0001-msm8916-wcd-declare-the-speaker-mono.patch
 	"
+builddir="$srcdir/alsa-ucm-conf-$_ucm_commit"
 
 package() {
 	mkdir -p "$pkgdir"
 	install -Dm644 "$srcdir"/wireplumber-msm8916-s16le.conf "$pkgdir"/usr/share/wireplumber/wireplumber.conf.d/msm8916-s16le.conf
 }
 
-# Upstream keeps making breaking changes to UCM in patch releases.
-# My last upstreaming efforts failed without ever getting a reply,
-# since then UCM was entirely reworked like 3 times already...
-# I don't want to fix this up every few months, so let's package a stable
-# version for now. Once all the UCM refactoring upstream has settled down a bit
-# we can investigate how to integrate it properly for upstreaming.
 ucm() {
-	provides="alsa-ucm-conf=0.$pkgver-r$pkgrel" # versioned provides need to be below default version
+	provides="alsa-ucm-conf=0.$pkgver-r$pkgrel"
 
-	cd "$srcdir/alsa-ucm-conf-$_ucm_commit"
+	cd "$builddir"
 	mkdir -p "$subpkgdir"/usr/share/alsa
 	cp -r ucm2 "$subpkgdir"/usr/share/alsa
 }
@@ -83,4 +79,5 @@ eee73ae7895fb6772b35a190956d17642d08af47a0fa5dfd022052c5b30c99cf9649215aef161ddc
 bcebc36ec62140f4620d462be2b95858adae380e5d74f6b9c9b956fb76a6541f39749f4dcec6ac3c39b868dbfed6fac7a34ba357510532a3df2d39f7ea818d55  77-modem-samsung-msm8916.rules
 de35a32f697247e4a8419647b9c9fece9bc7f41c0e2377d01659ad0dc1ba21b08d3227193053d7cd1ec5006370db574472516f0d0061fb9d2d9509f27f6212d3  adreno-a306-quirks.sh
 25d2e0c9c405ed9c52ec73f05d5feb8a005029de964284d20a743eaea138e617f5658b467082569da032453a7977eef086b365c389bc32a352f8c59e44a41f6b  wireplumber-msm8916-s16le.conf
+9e886f6ac1f138d746ed0e5dcf4a093bb54f2436c3519e7a3443ee5f8141101e22db9cb8336b0b752a4f1c54827bcd34af645f083a7a966debf3539e896f760c  0001-msm8916-wcd-declare-the-speaker-mono.patch
 "

@@ -1,0 +1,124 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Subject: [PATCH] Wait for initial audio discovery before owning the service name
+
+D-Bus activation can dispatch the first routing request before the PulseAudio
+context and card inventory are ready. That request never receives a reply.
+Drain initial discovery before publishing the service, keeping one bus owner
+when the backend reconnects.
+
+--- a/src/cad-pulse.c
++++ b/src/cad-pulse.c
+@@ -56,6 +56,8 @@
+ };
+ 
+ G_DEFINE_TYPE(CadPulse, cad_pulse, G_TYPE_OBJECT);
++
++static guint ready_signal;
+ 
+ typedef struct _CadPulseOperation {
+     CadPulse *pulse;
+@@ -587,6 +589,12 @@
+     }
+ }
+ 
++static void pulse_ready_cb(pa_context *ctx, void *data)
++{
++    if (pa_context_get_state(ctx) == PA_CONTEXT_READY)
++        g_signal_emit(data, ready_signal, 0);
++}
++
+ static gboolean init_pulseaudio_objects(gpointer data)
+ {
+     CadPulse *self = data;
+@@ -604,6 +612,12 @@
+     op = pa_context_get_server_info(self->ctx, init_server_info, self);
+     if (op)
+         pa_operation_unref(op);
++
++    op = pa_context_drain(self->ctx, pulse_ready_cb, self);
++    if (op)
++        pa_operation_unref(op);
++    else
++        pulse_ready_cb(self->ctx, self);
+ 
+     return G_SOURCE_REMOVE;
+ }
+@@ -674,6 +688,7 @@
+     state = pa_context_get_state(ctx);
+     switch (state) {
+     case PA_CONTEXT_UNCONNECTED:
++    case PA_CONTEXT_TERMINATED:
+     case PA_CONTEXT_CONNECTING:
+     case PA_CONTEXT_AUTHORIZING:
+     case PA_CONTEXT_SETTING_NAME:
+@@ -684,7 +699,6 @@
+         pulseaudio_cleanup(self);
+         g_idle_add(G_SOURCE_FUNC(pulseaudio_connect), self);
+         break;
+-    case PA_CONTEXT_TERMINATED:
+     case PA_CONTEXT_READY:
+         pa_context_set_subscribe_callback(ctx, changed_cb, self);
+         pa_context_subscribe(ctx,
+@@ -776,11 +790,16 @@
+ 
+     object_class->constructed = constructed;
+     object_class->dispose = dispose;
++
++    ready_signal = g_signal_new("ready", G_TYPE_FROM_CLASS(klass),
++                                G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL,
++                                G_TYPE_NONE, 0);
+ }
+ 
+ static void cad_pulse_init(CadPulse *self)
+ {
+     self->manager = G_OBJECT(cad_manager_get_default());
++    self->card_id = self->sink_id = self->source_id = -1;
+     self->audio_mode = CALL_AUDIO_MODE_UNKNOWN;
+     self->speaker_state = CALL_AUDIO_SPEAKER_UNKNOWN;
+     self->mic_state = CALL_AUDIO_MIC_UNKNOWN;
+--- a/src/callaudiod.c
++++ b/src/callaudiod.c
+@@ -16,6 +16,7 @@
+ #include <glib-unix.h>
+ 
+ static GMainLoop *main_loop = NULL;
++static guint bus_owner_id;
+ 
+ static gboolean quit_cb(gpointer user_data)
+ {
+@@ -64,6 +65,15 @@
+     g_main_loop_quit(main_loop);
+ }
+ 
++static void pulse_ready_cb(CadPulse *pulse, gpointer user_data)
++{
++    if (!bus_owner_id)
++        bus_owner_id = g_bus_own_name(CALLAUDIO_DBUS_TYPE, CALLAUDIO_DBUS_NAME,
++                                      G_BUS_NAME_OWNER_FLAGS_NONE,
++                                      bus_acquired_cb, name_acquired_cb, name_lost_cb,
++                                      NULL, NULL);
++}
++
+ int main(int argc, char **argv)
+ {
+     g_unix_signal_add(SIGTERM, quit_cb, NULL);
+@@ -71,15 +81,12 @@
+ 
+     main_loop = g_main_loop_new(NULL, FALSE);
+ 
+-    // Initialize the PulseAudio backend
+-    cad_pulse_get_default();
+-
+-    g_bus_own_name(CALLAUDIO_DBUS_TYPE, CALLAUDIO_DBUS_NAME,
+-                   G_BUS_NAME_OWNER_FLAGS_NONE,
+-                   bus_acquired_cb, name_acquired_cb, name_lost_cb,
+-                   NULL, NULL);
++    g_signal_connect(cad_pulse_get_default(), "ready",
++                     G_CALLBACK(pulse_ready_cb), NULL);
+ 
+     g_main_loop_run(main_loop);
++    if (bus_owner_id)
++        g_bus_unown_name(bus_owner_id);
+     g_main_loop_unref(main_loop);
+ 
+     return 0;

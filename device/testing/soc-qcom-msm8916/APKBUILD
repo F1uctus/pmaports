@@ -2,7 +2,7 @@ maintainer="Nikita Travkin <nikita@trvn.ru>"
 pkgname=soc-qcom-msm8916
 pkgdesc="Common package for Qualcomm MSM8916 devices"
 pkgver=27
-pkgrel=2
+pkgrel=3
 url="https://postmarketos.org"
 license="BSD-3-Clause"
 arch="aarch64 armv7"
@@ -22,6 +22,7 @@ source="$pkgname-$_ucm_commit.tar.gz::https://github.com/msm8916-mainline/alsa-u
 	77-modem-samsung-msm8916.rules
 	adreno-a306-quirks.sh
 	wireplumber-msm8916-s16le.conf
+	wireplumber-msm8916-compress-offload.conf
 	0001-msm8916-wcd-declare-the-speaker-mono.patch
 	"
 builddir="$srcdir/alsa-ucm-conf-$_ucm_commit"
@@ -29,6 +30,7 @@ builddir="$srcdir/alsa-ucm-conf-$_ucm_commit"
 package() {
 	mkdir -p "$pkgdir"
 	install -Dm644 "$srcdir"/wireplumber-msm8916-s16le.conf "$pkgdir"/usr/share/wireplumber/wireplumber.conf.d/msm8916-s16le.conf
+	install -Dm644 "$srcdir"/wireplumber-msm8916-compress-offload.conf "$pkgdir"/usr/share/wireplumber/wireplumber.conf.d/msm8916-compress-offload.conf
 }
 
 ucm() {
@@ -79,5 +81,6 @@ eee73ae7895fb6772b35a190956d17642d08af47a0fa5dfd022052c5b30c99cf9649215aef161ddc
 bcebc36ec62140f4620d462be2b95858adae380e5d74f6b9c9b956fb76a6541f39749f4dcec6ac3c39b868dbfed6fac7a34ba357510532a3df2d39f7ea818d55  77-modem-samsung-msm8916.rules
 de35a32f697247e4a8419647b9c9fece9bc7f41c0e2377d01659ad0dc1ba21b08d3227193053d7cd1ec5006370db574472516f0d0061fb9d2d9509f27f6212d3  adreno-a306-quirks.sh
 25d2e0c9c405ed9c52ec73f05d5feb8a005029de964284d20a743eaea138e617f5658b467082569da032453a7977eef086b365c389bc32a352f8c59e44a41f6b  wireplumber-msm8916-s16le.conf
+8d34dcbcdad1a4ca5c984605c4502df912eba64e093f854b0e7daf2566cc70b80935ab1ae7c5a46d1e533de8d412dd1304f70154784a0fd76b291e104795e4ae  wireplumber-msm8916-compress-offload.conf
 9e886f6ac1f138d746ed0e5dcf4a093bb54f2436c3519e7a3443ee5f8141101e22db9cb8336b0b752a4f1c54827bcd34af645f083a7a966debf3539e896f760c  0001-msm8916-wcd-declare-the-speaker-mono.patch
 "

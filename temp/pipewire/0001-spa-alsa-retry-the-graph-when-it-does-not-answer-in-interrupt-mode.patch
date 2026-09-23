@@ -1,0 +1,165 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Date: Wed, 23 Sep 2026 19:40:00 +0300
+Subject: [PATCH] spa: alsa: retry the graph when it does not answer in interrupt mode
+
+With api.alsa.disable-tsched the sink is woken only by its ALSA poll
+fds. playback_ready() masks them to zero before asking the graph for
+data, and only alsa_write_frames() - reached when the cycle completes
+and the driver's process() runs - or alsa_recover() arms them again.
+
+If that cycle never completes, nothing is left to wake the sink. The
+graph core has a recovery for exactly this: when the driver signals
+ready while the previous cycle is still pending, node_ready() reports
+an xrun and runs process_node() on the driver itself. Timer mode
+reaches it on the next tick. Interrupt mode never does, because its
+only wakeup is the fd it masked while waiting for that cycle, so the
+sink stalls for good: the PCM stays RUNNING with a frozen hw_ptr and
+an empty ring, every node reads running, and no xrun is ever logged.
+
+It reproduces on an msm8939 phone (q6asm, 1920-frame periods) within a
+few attempts by starting a second stream 0.3 s into a first. Kernel
+probes show the last cycle as: period elapsed, the sink polls its fd
+and masks it, and then no write and no further poll at all. Pinning
+clock.force-quantum to the hardware period does not change this.
+
+Give interrupt mode a watchdog on the timerfd, which is now created in
+both modes. playback_ready() pushes it two periods ahead every cycle,
+so in steady state it never fires and costs one timerfd_settime() per
+period. If it fires while the fds are still masked, arm them again:
+the ring has space, so the sink wakes at once, signals ready, and the
+graph core's own recovery runs. add_sources() also arms the fds, since
+a remove/add pair while they are masked would otherwise re-register
+them masked off.
+---
+--- a/spa/plugins/alsa/alsa-pcm.h
++++ b/spa/plugins/alsa/alsa-pcm.h
+@@ -200,6 +200,8 @@
+ 	/* Either a single source for tsched, or a set of pollfds from ALSA */
+ 	struct spa_source source[MAX_POLL];
+ 	int timerfd;
++	/* interrupt mode: fires when the graph does not answer playback_ready() */
++	struct spa_source irq_timer;
+ 	struct pollfd pfds[MAX_POLL];
+ 	int n_fds;
+ 	uint32_t threshold;
+--- a/spa/plugins/alsa/alsa-pcm.c
++++ b/spa/plugins/alsa/alsa-pcm.c
+@@ -1230,16 +1230,13 @@
+ 			device_name,
+ 			state->stream == SND_PCM_STREAM_CAPTURE ? "capture" : "playback");
+ 
+-	if (!state->disable_tsched) {
+-		if ((err = spa_system_timerfd_create(state->data_system,
+-				CLOCK_MONOTONIC, SPA_FD_CLOEXEC | SPA_FD_NONBLOCK)) < 0)
+-			goto error_exit_close;
+-
+-		state->timerfd = err;
+-	} else {
+-		/* ALSA pollfds may only be ready after setting swparams, so
+-		 * these are initialised in spa_alsa_start() */
+-	}
++	if ((err = spa_system_timerfd_create(state->data_system,
++			CLOCK_MONOTONIC, SPA_FD_CLOEXEC | SPA_FD_NONBLOCK)) < 0)
++		goto error_exit_close;
++
++	state->timerfd = err;
++	/* In interrupt mode the ALSA pollfds may only be ready after setting
++	 * swparams, so they are initialised in spa_alsa_start() */
+ 
+ 	state->opened = true;
+ 	state->sample_count = 0;
+@@ -1292,9 +1289,8 @@
+ 		spa_log_warn(state->log, "%s: close failed: %s", state->name,
+ 				snd_strerror(err));
+ 
+-	if (!state->disable_tsched)
+-		spa_system_close(state->data_system, state->timerfd);
+-	else
++	spa_system_close(state->data_system, state->timerfd);
++	if (state->disable_tsched)
+ 		state->n_fds = 0;
+ 
+ 	if (state->have_format && state->card)
+@@ -2790,6 +2786,7 @@
+ 
+ static inline int check_position_config(struct state *state, bool starting);
+ static void update_sources(struct state *state, bool active);
++static uint64_t get_time_ns(struct state *state);
+ 
+ static int alsa_recover(struct state *state)
+ {
+@@ -3620,6 +3617,9 @@
+ 	spa_log_trace_fp(state->log, "%p: %d", state, io ? io->status : 0);
+ 
+ 	update_sources(state, false);
++	if (state->disable_tsched && state->rt.sources_added)
++		set_timeout(state, get_time_ns(state) +
++				2 * (uint64_t)state->threshold * SPA_NSEC_PER_SEC / state->rate);
+ 
+ 	if (io != NULL)
+ 		io->status = SPA_STATUS_NEED_DATA;
+@@ -3751,6 +3751,25 @@
+ 	alsa_do_wakeup_work(state, current_time);
+ }
+ 
++static void alsa_irq_timer_event(struct spa_source *source)
++{
++	struct state *state = source->data;
++	uint64_t expire;
++	int suppressed;
++
++	if (SPA_UNLIKELY(spa_system_timerfd_read(state->data_system,
++				state->timerfd, &expire) < 0))
++		return;
++	/* the graph answered and alsa_write_frames() armed the fds again */
++	if (state->n_fds == 0 || state->source[0].mask != 0)
++		return;
++
++	if ((suppressed = spa_ratelimit_test(&state->rate_limit, get_time_ns(state))) >= 0)
++		spa_log_warn(state->log, "%s: graph did not complete, retrying (%d suppressed)",
++				state->name, suppressed);
++	update_sources(state, true);
++}
++
+ static void alsa_timer_wakeup_event(struct spa_source *source)
+ {
+ 	struct state *state = source->data;
+@@ -3793,6 +3812,10 @@
+ 	if (state->rt.sources_added) {
+ 		for (i = 0; i < state->n_fds; i++)
+ 			spa_loop_remove_source(state->data_loop, &state->source[i]);
++		if (state->disable_tsched) {
++			set_timeout(state, 0);
++			spa_loop_remove_source(state->data_loop, &state->irq_timer);
++		}
+ 		state->rt.sources_added = false;
+ 	}
+ }
+@@ -3801,8 +3824,14 @@
+ {
+ 	int i;
+ 	if (!state->rt.sources_added) {
+-		for (i = 0; i < state->n_fds; i++)
++		for (i = 0; i < state->n_fds; i++) {
++			/* playback_ready() may have masked these off */
++			if (state->disable_tsched)
++				state->source[i].mask = state->pfds[i].events;
+ 			spa_loop_add_source(state->data_loop, &state->source[i]);
++		}
++		if (state->disable_tsched)
++			spa_loop_add_source(state->data_loop, &state->irq_timer);
+ 		state->rt.sources_added = true;
+ 	}
+ }
+@@ -3932,6 +3961,11 @@
+ 			state->source[i].mask = state->pfds[i].events;
+ 			state->source[i].rmask = 0;
+ 		}
++		state->irq_timer.func = alsa_irq_timer_event;
++		state->irq_timer.data = state;
++		state->irq_timer.fd = state->timerfd;
++		state->irq_timer.mask = SPA_IO_IN;
++		state->irq_timer.rmask = 0;
+ 	}
+ 
+ 	spa_list_for_each(follower, &state->followers, driver_link)

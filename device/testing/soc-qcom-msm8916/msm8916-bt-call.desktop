@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Bluetooth call audio
+Exec=/usr/libexec/msm8916-bt-call
+NoDisplay=true
+X-GNOME-AutoRestart=true

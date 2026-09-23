@@ -1,0 +1,57 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Date: Wed, 23 Sep 2026 20:58:00 +0300
+Subject: [PATCH] linking: recompute a stale priority media role link
+
+The highest-priority media role link per target media class is cached
+in lutils.priority_media_role_link and cleared only in
+unhandleLinkable(), when a linkable goes away. Links removed any other
+way - prepare-link moving a stream to a new target, as every card
+profile switch does, or a failed media role activation - stay cached.
+
+rescan-media-role-links then applies the dead link's policy to all
+live ones. With a dead Alert-role link cached, every new Multimedia
+stream is corked: its link is never activated, its ports are never
+configured, and it sits suspended with none, while the code after the
+loop keeps trying to activate the dead link. Only restarting
+WirePlumber cleared it.
+
+Before using the cached link, check that it is still one of the live
+role links for the media class, and otherwise let
+clearPriorityMediaRoleLink() recompute it from the live ones.
+
+On an msm8939 phone whose card switches between an earpiece and a
+speaker profile around every call, playback failed after the first
+switch every time; with this, 24 switches in a row each played, and
+the cached link was found dead on 23 of them.
+---
+--- a/src/scripts/linking/rescan-media-role-links.lua
++++ b/src/scripts/linking/rescan-media-role-links.lua
+@@ -108,6 +108,28 @@
+         local pmrl_active = nil
+         pmrl = lutils.getPriorityMediaRoleLink(mc)
+ 
++        -- The cache is only cleared when a linkable goes away, so a link
++        -- removed any other way can linger in it and cork every stream of a
++        -- lower role. Trust it only while it is still a live link.
++        if pmrl then
++          local live = false
++          for link in om:iterate {
++            type = "SiLink",
++            Constraint { "is.role.policy.link", "=", true },
++            Constraint { "target.media.class", "=", mc },
++          } do
++            if link == pmrl then
++              live = true
++              break
++            end
++          end
++          if not live then
++            log:info("priority media role link is gone, recomputing")
++            lutils.clearPriorityMediaRoleLink(pmrl)
++            pmrl = lutils.getPriorityMediaRoleLink(mc)
++          end
++        end
++
+         log:debug("Rescanning media role links...")
+ 
+         local function onMediaRoleLinkActivated (l, e)

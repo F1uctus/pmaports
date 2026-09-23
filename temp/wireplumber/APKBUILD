@@ -1,7 +1,7 @@
 maintainer="team/alpine-desktop <bribbers@disroot.org>"
 pkgname=wireplumber
 pkgver=0.5.17
-pkgrel=1
+pkgrel=2
 pkgdesc="Session / policy manager implementation for PipeWire"
 url="https://pipewire.org/"
 arch="all"
@@ -37,6 +37,7 @@ subpackages="
 	"
 source="https://gitlab.freedesktop.org/PipeWire/wireplumber/-/archive/$pkgver/wireplumber-$pkgver.tar.gz
 	0001-linking-only-trust-peer_id-while-its-link-object-exists.patch
+	0002-linking-recompute-a-stale-priority-media-role-link.patch
 	wireplumber.initd
 	"
 
@@ -82,5 +83,6 @@ logind() {
 sha512sums="
 ec83898a7be54a3457fe9d09281b7af1af9e4da5483f95ed8998d97f0014225c2af89c2caf02dbc596c5f5f7cc7fa0a07689852a66df08d318162299ef25d395  wireplumber-0.5.17.tar.gz
 0563eb4b434c73bb871ad89f34a3d76ca6fb3a7b870ed82a885b1b0443e12fc92da9cd79d60c244086cee646540de0c27114beb18488c546f98bccebe2b816f5  0001-linking-only-trust-peer_id-while-its-link-object-exists.patch
+a04803161f8d46d58458a045b5910273eac431b1aae137b05797a1f7c1ea769f62475069ab603643a628487f5d64e8e5e72bf26c5de16fca305d80e5da1b7f57  0002-linking-recompute-a-stale-priority-media-role-link.patch
 49498bf81297e0816c871324d20d6174fb30b7ce564f9a4d4975f141e5829308c6a7d99d96a3a20773e40aa9f3492ce34e9cf10ccd9e125b6b8ac49107d99e57  wireplumber.initd
 "

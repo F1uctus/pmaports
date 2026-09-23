@@ -1,0 +1,86 @@
+maintainer="team/alpine-desktop <bribbers@disroot.org>"
+pkgname=wireplumber
+pkgver=0.5.17
+pkgrel=1
+pkgdesc="Session / policy manager implementation for PipeWire"
+url="https://pipewire.org/"
+arch="all"
+license="MIT"
+depends_dev="
+	elogind-dev
+	glib-dev
+	lua5.4-dev
+	pipewire-dev>=0.3.39
+	"
+makedepends="$depends_dev
+	doxygen
+	gobject-introspection-dev
+	graphviz
+	meson
+	py3-lxml
+	"
+checkdepends="
+	dbus
+	pipewire
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-libs
+	$pkgname-dev
+	$pkgname-logind
+	$pkgname-lang
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-systemd
+	"
+source="https://gitlab.freedesktop.org/PipeWire/wireplumber/-/archive/$pkgver/wireplumber-$pkgver.tar.gz
+	0001-linking-only-trust-peer_id-while-its-link-object-exists.patch
+	wireplumber.initd
+	"
+
+provides="pipewire-session-manager"
+provider_priority=50
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dintrospection=enabled \
+		-Dsystem-lua=true \
+		-Delogind=enabled \
+		-Dsystemd-user-service=true \
+		-Dsystemd-user-unit-dir="/usr/lib/systemd/user" \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test -t 10 --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm755 "$srcdir"/wireplumber.initd "$pkgdir"/etc/user/init.d/wireplumber
+}
+
+logind() {
+	# This not only needs libelogind, but also elogind being installed and
+	# running. Otherwise wireplumber fails to launch.
+	depends="$depends elogind"
+	# The purpose of the (e)logind module currently is limited to preventing
+	# GDM from hijacking the Bluetooth HFP/HSP profile. But GDM users cannot
+	# use bluetooth audio without, so install it for them
+	install_if="$pkgname=$pkgver-r$pkgrel gdm"
+	pkgdesc="wireplumbers optional (e)logind integration needed by GDM users"
+
+	amove usr/lib/wireplumber-0.5/libwireplumber-module-logind.so
+}
+
+sha512sums="
+ec83898a7be54a3457fe9d09281b7af1af9e4da5483f95ed8998d97f0014225c2af89c2caf02dbc596c5f5f7cc7fa0a07689852a66df08d318162299ef25d395  wireplumber-0.5.17.tar.gz
+0563eb4b434c73bb871ad89f34a3d76ca6fb3a7b870ed82a885b1b0443e12fc92da9cd79d60c244086cee646540de0c27114beb18488c546f98bccebe2b816f5  0001-linking-only-trust-peer_id-while-its-link-object-exists.patch
+49498bf81297e0816c871324d20d6174fb30b7ce564f9a4d4975f141e5829308c6a7d99d96a3a20773e40aa9f3492ce34e9cf10ccd9e125b6b8ac49107d99e57  wireplumber.initd
+"

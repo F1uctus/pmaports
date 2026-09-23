@@ -1,0 +1,46 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Date: Tue, 23 Sep 2026 08:12:00 +0300
+Subject: [PATCH] linking: only trust peer_id while its link object exists
+
+si_flags.peer_id outlives the link it describes and session item ids are
+reused, so prepare-link can take a stream for linked when its link is
+gone. It then reports "already linked to proper target" and stops the
+chain, leaving the stream unlinked with nothing to retry it. Measured on
+an msm8916 phone this hit roughly one playback in 30 to 70; an earlier
+form of this check gave 124 consecutive clean cycles.
+
+Look the link up once, while peer_id is still set, and take the shortcut
+only when that link object is there. Doing it once also removes the later
+lookup, which ran with a nil peer_id once the stale branch had cleared it
+and raised a Constraint error.
+
+Testing whether the link is ACTIVE rather than merely present is wrong:
+activation is asynchronous, so a link still coming up gets removed and
+playback breaks far more often than the bug being fixed.
+--- a/src/scripts/linking/prepare-link.lua
++++ b/src/scripts/linking/prepare-link.lua
+@@ -33,7 +33,15 @@
+ 
+     -- Check if item is linked to proper target, otherwise re-link
+     if si_flags.peer_id then
+-      if target and si_flags.peer_id == target.id then
++      -- The bookkeeping outlives the link it describes and item ids are
++      -- reused, so trust it only while that link object is really there.
++      local link = lutils.lookupLink (si_id, si_flags.peer_id)
++
++      if link == nil and target and si_flags.peer_id == target.id then
++        log:info (si, "... stale peer " .. tostring (si_flags.peer_id))
++      end
++
++      if link ~= nil and target and si_flags.peer_id == target.id then
+         log:info (si, "... already linked to proper target")
+ 
+         -- Check this also here, in case in default targets changed
+@@ -46,7 +54,6 @@
+         goto done
+       end
+ 
+-      local link = lutils.lookupLink (si_id, si_flags.peer_id)
+       if reconnect then
+         if link ~= nil then
+           -- remove old link

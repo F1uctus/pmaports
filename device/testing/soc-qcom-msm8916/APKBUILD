@@ -2,7 +2,7 @@ maintainer="Nikita Travkin <nikita@trvn.ru>"
 pkgname=soc-qcom-msm8916
 pkgdesc="Common package for Qualcomm MSM8916 devices"
 pkgver=27
-pkgrel=6
+pkgrel=7
 url="https://postmarketos.org"
 license="BSD-3-Clause"
 arch="aarch64 armv7"
@@ -28,6 +28,7 @@ source="$pkgname-$_ucm_commit.tar.gz::https://github.com/msm8916-mainline/alsa-u
 	msm8916-bt-call.desktop
 	wireplumber-msm8916-bt-call.conf
 	0001-msm8916-wcd-declare-the-speaker-mono.patch
+	0002-msm8916-wcd-declare-the-earpiece-mono.patch
 	"
 builddir="$srcdir/alsa-ucm-conf-$_ucm_commit"
 
@@ -100,4 +101,5 @@ de35a32f697247e4a8419647b9c9fece9bc7f41c0e2377d01659ad0dc1ba21b08d3227193053d7cd
 64319da86324d85a9eb35e8d6bea4d63b578602c55ce6afbc7156497071feef604a9584d1c9a2cfc671e9cd5e91d35e389a2563b3dd6933b32b2610611b786dd  msm8916-bt-call.desktop
 f521e0a780d6a379782f5e46cec1f0a0e12ede74173245c4b0049dfebf093f615a923e84310f3e4114fe4c103af1858807b5af0b0d03c5d69c3c2d37b90daa8d  wireplumber-msm8916-bt-call.conf
 9e886f6ac1f138d746ed0e5dcf4a093bb54f2436c3519e7a3443ee5f8141101e22db9cb8336b0b752a4f1c54827bcd34af645f083a7a966debf3539e896f760c  0001-msm8916-wcd-declare-the-speaker-mono.patch
+c12512de992ed1241b86f22c0ab168abf140534aa767626c2037f249927e85278cd00b5ee396ebb0c05905b4356bc49dcc5be19567724fc95f9f92439f0ace69  0002-msm8916-wcd-declare-the-earpiece-mono.patch
 "

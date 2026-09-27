@@ -1,0 +1,33 @@
+From: Ilya I. Nikitin <ilya.i.nikitin@proton.me>
+Subject: [PATCH] mixer-control: keep retrying when a reconnect fails at once
+
+idle_reconnect() cleared reconnect_id only after gvc_mixer_control_open()
+returned. When the sound server is not running yet, pa_context_connect()
+fails synchronously and the PA_CONTEXT_FAILED callback runs inside that
+call; it finds reconnect_id still set to the timer that is firing and
+schedules nothing, and idle_reconnect() then zeroes it. So the second
+failed attempt was the last one and the control never connected.
+
+On a phone where the shell starts about 12 s before pipewire-pulse, Phosh's
+volume slider stayed bound to no stream for the whole session: it showed
+wherever it was last dragged and changed nothing, while the volume OSD of
+gnome-settings-daemon, which happened to retry after the server was up,
+showed the real volume.
+
+Clear reconnect_id before reopening so a failed reopen schedules the next
+attempt.
+---
+--- a/subprojects/gvc/gvc-mixer-control.c	2026-09-27 13:07:16.601763027 +0300
++++ b/subprojects/gvc/gvc-mixer-control.c	2026-09-27 13:07:16.617120581 +0300
+@@ -3525,9 +3525,10 @@
+                 gvc_mixer_new_pa_context (control);
+         }
+ 
++        control->priv->reconnect_id = 0;
++
+         gvc_mixer_control_open (control); /* cannot fail */
+ 
+-        control->priv->reconnect_id = 0;
+         return FALSE;
+ }
+ 

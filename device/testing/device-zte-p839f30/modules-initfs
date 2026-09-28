@@ -6,4 +6,6 @@ libcomposite
 usb_f_ncm
 usb_f_rndis
 u_ether
+# VBUS extcon of the UDC
+smb1360
 # WCNSS (WiFi/BT) intentionally omitted until later phase — needs firmware.

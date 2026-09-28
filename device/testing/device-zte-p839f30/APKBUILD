@@ -3,7 +3,7 @@
 pkgname=device-zte-p839f30
 pkgdesc="ZTE Blade S6 (P839F30)"
 pkgver=1
-pkgrel=79
+pkgrel=83
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -64,11 +64,12 @@ package() {
 }
 
 nonfree_firmware() {
-	pkgdesc="WiFi firmware (WCNSS NV + modem partition loader)"
+	pkgdesc="WiFi, GPU, and video firmware"
 	depends="
 		msm-firmware-loader-wcnss
 		firmware-zte-p839f30-wcnss-nv
 		firmware-qcom-adreno-a420
+		firmware-zte-p839f30-venus
 	"
 	mkdir -p "$subpkgdir"
 }
@@ -83,7 +84,7 @@ console_autologin() {
 
 sha512sums="
 e53e83277095c6485353fea7087dec8a93384d10a6426247254227d24ea3d724826ddbe6771becd3817ccaf7a642b0cdd3d5335a7361b59f5d8eae96bbc030a4  deviceinfo
-89dbcc9bbd5bacaa83aaee208992601dc23c3a864200f4d69839385874027dee928250c7dc733e1101e03eb489ab507e0cf5ed0b9dca47f14bdf1121a2559fb8  modules-initfs
+d401ec20c3799bef2f7532f9c9e81f1aa8e53906c0bbbdfdec004353d4624171854387b9f9a2cdfc0b44ef043e3bb4d329c582d959176973793a5a09027e9cca  modules-initfs
 f76a50fc73b644cb6cadba30c68511a10d60c0365466260415203bd46e8539d59dc27040b7591ddeb83524a3dcb94ca28c9b1aca3a64bfcf11a53238d8bf60c8  device-zte-p839f30.post-install
 bdeb9d3d9a7016b6e0aa78205e357d795da860e471196e68840671ad84b5dfab8bad5ae4ba6b522cdbbfb1d629035c51cc010a200341bdcb4bf26adf7414b77d  50-zte-p839f30.gschema.override
 862cfac029304ee56135c5f81e72338bbc8c0936065ae7caa680fd3fec81ee49417b703030969d0eb5459aa6113d91490e9c79e5f113d6de5f0d1d075a1b9da8  libcamera-configuration.yaml

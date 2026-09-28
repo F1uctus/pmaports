@@ -1,0 +1,21 @@
+pkgname=firmware-zte-p839f30-venus
+pkgver=20160211
+pkgrel=0
+pkgdesc="ZTE Blade S6 Venus video firmware"
+url="https://github.com/Lightwars/android_vendor_zte_p839f30"
+arch="aarch64"
+license="proprietary"
+options="!check !strip !archcheck !tracedeps"
+provides="firmware-qcom-msm8916-venus"
+replaces="linux-firmware-qcom firmware-qcom-db410c-venus firmware-qcom-venus-1.8"
+_commit=afab3e83ac3c3e4a87453a449767d5abe3cfd553
+source="$pkgname-$pkgver.mbn::https://raw.githubusercontent.com/Lightwars/android_vendor_zte_p839f30/$_commit/proprietary/etc/firmware/venus.mbn"
+
+package() {
+	install -Dm644 "$srcdir/$pkgname-$pkgver.mbn" \
+		"$pkgdir/usr/lib/firmware/qcom/venus-1.8/venus.mbn"
+	ln -s venus.mbn "$pkgdir/usr/lib/firmware/qcom/venus-1.8/venus.mdt"
+}
+sha512sums="
+08aad0b0101e382c0d25dede626933512222500ad0267afd05fff71e50e91b45475c8720ef982d42831a05d936030a214528e4a17a68e01fd579cb1c14b1ef14  firmware-zte-p839f30-venus-20160211.mbn
+"
